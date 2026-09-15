@@ -117,6 +117,63 @@ async function fetchMeteredIceViaApiKey(logPrefix) {
   console.log('%s apiKey status=%d ct=%s body-head=%s', logPrefix,
     r.status, r.headers.get('content-type') || '(none)',
     bodyText.slice(0, 300).replace(/\s+/g, ' '));
+  if (!r.ok) {
+    const hint = hintFromMeteredError(bodyText);
+    if (hint) console.log('%s %s', logPrefix, hint);
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(bodyText);
+    if (Array.isArray(parsed) && parsed.length) return parsed;
+  } catch (e) { /* fall through */ }
+  return null;
+}
+
+function hintFromMeteredError(bodyText) {
+  var lc = (bodyText || '').toLowerCase();
+  if (lc.indexOf('invalid secretkey') !== -1 || lc.indexOf('authorization failed') !== -1) {
+    return 'HINT: Metered says the secretKey OR the app subdomain is wrong. Verify METERED_APP_NAME (the "<name>" in <name>.metered.live) matches your dashboard exactly, and that METERED_SECRET_KEY is the current Secret Key from Dashboard > Developers (regenerate it and try again if unsure).';
+  }
+  if (lc.indexOf('not found') !== -1 || lc.indexOf('cannot get') !== -1 || lc.indexOf('cannot post') !== -1) {
+    return 'HINT: Endpoint not found. The METERED_APP_NAME subdomain probably does not exist. Double-check the exact spelling in Metered dashboard.';
+  }
+  return null;
+}
+
+async function createMeteredCredential(logPrefix) {
+  const createUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credential?secretKey=' + encodeURIComponent(METERED_SECRET_KEY);
+  console.log('%s POST create credential', logPrefix);
+  const r = await fetch(createUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expiryInSeconds: 24 * 60 * 60, label: 'h-calls-auto' })
+  });
+  const bodyText = await r.text();
+  console.log('%s create status=%d ct=%s body-head=%s', logPrefix,
+    r.status, r.headers.get('content-type') || '(none)',
+    bodyText.slice(0, 300).replace(/\s+/g, ' '));
+  if (!r.ok) {
+    const hint = hintFromMeteredError(bodyText);
+    if (hint) console.log('%s %s', logPrefix, hint);
+    return null;
+  }
+  try {
+    const cred = JSON.parse(bodyText);
+    if (cred && cred.apiKey) {
+      console.log('%s created credential label=%s (may take up to 2min to fully propagate across Metered edges)', logPrefix, cred.label);
+      return cred;
+    }
+  } catch (e) { /* fall through */ }
+  return null;
+}
+
+async function fetchIceForApiKey(logPrefix, apiKey, label) {
+  const iceUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(apiKey);
+  console.log('%s GET ice via credential label=%s apiKey-len=%d', logPrefix, label || '(?)', apiKey.length);
+  const r = await fetch(iceUrl);
+  const bodyText = await r.text();
+  console.log('%s ice status=%d body-head=%s', logPrefix,
+    r.status, bodyText.slice(0, 300).replace(/\s+/g, ' '));
   if (!r.ok) return null;
   try {
     const parsed = JSON.parse(bodyText);
@@ -126,53 +183,52 @@ async function fetchMeteredIceViaApiKey(logPrefix) {
 }
 
 async function fetchMeteredIceViaSecretKey(logPrefix) {
-  // Step 1: list credentials via v2, using secretKey
+  // Step 1: try to list existing credentials via v2, so we can reuse one
+  //         and avoid piling up new credentials on every 60s cache miss.
   const listUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v2/turn/credentials?secretKey=' + encodeURIComponent(METERED_SECRET_KEY);
   const redactedListUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v2/turn/credentials?secretKey=<REDACTED len=' + METERED_SECRET_KEY.length + '>';
-  console.log('%s fetching secretKey mode list url=%s', logPrefix, redactedListUrl);
-  let r = await fetch(listUrl);
-  let bodyText = await r.text();
-  console.log('%s secretKey list status=%d ct=%s body-head=%s', logPrefix,
-    r.status, r.headers.get('content-type') || '(none)',
-    bodyText.slice(0, 300).replace(/\s+/g, ' '));
-  if (!r.ok) return null;
+  console.log('%s GET list url=%s', logPrefix, redactedListUrl);
+  let chosen = null;
+  try {
+    const r = await fetch(listUrl);
+    const bodyText = await r.text();
+    console.log('%s list status=%d ct=%s body-head=%s', logPrefix,
+      r.status, r.headers.get('content-type') || '(none)',
+      bodyText.slice(0, 300).replace(/\s+/g, ' '));
 
-  let listed = null;
-  try { listed = JSON.parse(bodyText); } catch (e) { return null; }
-  const items = listed && Array.isArray(listed.data) ? listed.data : (Array.isArray(listed) ? listed : []);
-  let chosen = items.find(function (c) { return c && !c.expired && c.apiKey; });
+    if (r.ok) {
+      try {
+        const listed = JSON.parse(bodyText);
+        const items = listed && Array.isArray(listed.data) ? listed.data : (Array.isArray(listed) ? listed : []);
+        chosen = items.find(function (c) { return c && !c.expired && c.apiKey; }) || null;
+        if (chosen) console.log('%s reusing existing credential label=%s', logPrefix, chosen.label);
+        else console.log('%s list ok but no reusable credentials (count=%d)', logPrefix, items.length);
+      } catch (e) {
+        console.log('%s list body not JSON, will try to create anyway', logPrefix);
+      }
+    } else {
+      const hint = hintFromMeteredError(bodyText);
+      if (hint) console.log('%s %s', logPrefix, hint);
+      // For auth errors, don't bother trying create (same key, same result).
+      // For other errors (endpoint moved, transient), still try create as a fallback.
+      if (r.status === 401 || r.status === 403) {
+        console.log('%s list auth-failed, aborting (create would fail identically)', logPrefix);
+        return null;
+      }
+      console.log('%s list failed non-auth, will attempt create as fallback', logPrefix);
+    }
+  } catch (err) {
+    console.log('%s list threw: %s, will attempt create as fallback', logPrefix, err && err.message);
+  }
 
-  // Step 2: if no non-expired credential exists, create one
+  // Step 2: no reusable credential -> create one
   if (!chosen) {
-    const createUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credential?secretKey=' + encodeURIComponent(METERED_SECRET_KEY);
-    console.log('%s no usable credential, creating via secretKey', logPrefix);
-    r = await fetch(createUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ expiryInSeconds: 24 * 60 * 60, label: 'h-calls-auto' })
-    });
-    bodyText = await r.text();
-    console.log('%s secretKey create status=%d body-head=%s', logPrefix,
-      r.status, bodyText.slice(0, 300).replace(/\s+/g, ' '));
-    if (!r.ok) return null;
-    try { chosen = JSON.parse(bodyText); } catch (e) { return null; }
-    if (!chosen || !chosen.apiKey) return null;
-    console.log('%s created credential label=%s (may take up to 2min to propagate)', logPrefix, chosen.label);
+    chosen = await createMeteredCredential(logPrefix);
+    if (!chosen) return null;
   }
 
   // Step 3: fetch iceServers using the credential's apiKey
-  const iceUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(chosen.apiKey);
-  console.log('%s fetching ice via credential apiKey label=%s', logPrefix, chosen.label);
-  r = await fetch(iceUrl);
-  bodyText = await r.text();
-  console.log('%s ice fetch status=%d body-head=%s', logPrefix,
-    r.status, bodyText.slice(0, 300).replace(/\s+/g, ' '));
-  if (!r.ok) return null;
-  try {
-    const parsed = JSON.parse(bodyText);
-    if (Array.isArray(parsed) && parsed.length) return parsed;
-  } catch (e) { /* fall through */ }
-  return null;
+  return fetchIceForApiKey(logPrefix, chosen.apiKey, chosen.label);
 }
 
 // Cache last successful Metered result for a short window so we don't hammer their API.
