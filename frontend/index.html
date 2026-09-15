@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Notes</title>
+  <link rel="icon" href="data:," />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ============ COVER: plain notes app ============ -->
+  <main id="notes-view">
+    <header class="notes-header">
+      <h1>Notes</h1>
+    </header>
+
+    <div class="notes-toolbar">
+      <input id="search-input" type="text" placeholder="Search notes..." autocomplete="off" />
+    </div>
+
+    <form id="add-form" class="add-form">
+      <textarea id="add-input" placeholder="Write a note and press Add" rows="2"></textarea>
+      <button type="submit">Add</button>
+    </form>
+
+    <ul id="notes-list" class="notes-list"></ul>
+    <p id="empty-state" class="empty-state" hidden>No notes yet.</p>
+  </main>
+
+  <!-- ============ REAL CALL UI (hidden until unlocked) ============ -->
+  <section id="call-view" hidden></section>
+
+  <!-- ============ DECOY CALL UI (hidden until unlocked) ============ -->
+  <section id="decoy-view" hidden></section>
+
+  <script src="cover.js"></script>
+</body>
+</html>
