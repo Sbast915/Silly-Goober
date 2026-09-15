@@ -194,10 +194,12 @@ body {
   gap: 8px;
   font-size: 12px;
   color: #aaa;
+  flex-wrap: wrap;
 }
 
 .device-picker select {
-  flex: 1;
+  flex: 1 1 120px;
+  min-width: 0;
   padding: 4px 6px;
   border-radius: 4px;
   border: 1px solid #444;
@@ -206,7 +208,7 @@ body {
   font-size: 12px;
 }
 
-.incoming-call {
+.incoming-call:not([hidden]) {
   position: absolute;
   inset: 0;
   background: rgba(0,0,0,0.75);

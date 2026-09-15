@@ -14,6 +14,8 @@ const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 const REAL_PASS_HASH = process.env.REAL_PASS_HASH || '';
 const DECOY_PASS_HASH = process.env.DECOY_PASS_HASH || '';
+const METERED_APP_NAME = process.env.METERED_APP_NAME || '';
+const METERED_API_KEY = process.env.METERED_API_KEY || '';
 
 const ROOM = 'call';
 const TOKEN_TTL_MS = 5 * 60 * 1000;
@@ -83,6 +85,52 @@ app.post('/api/unlock', (req, res) => {
   const token = crypto.randomBytes(24).toString('hex');
   tokens.set(token, { expires: now + TOKEN_TTL_MS });
   return res.json({ ok: true, mode: 'real', token });
+});
+
+function tokenFromReq(req) {
+  var h = req.headers['authorization'] || '';
+  if (h.slice(0, 7).toLowerCase() === 'bearer ') return h.slice(7);
+  return (req.body && req.body.token) || '';
+}
+
+const FALLBACK_ICE = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:443?transport=tcp'
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject'
+  }
+];
+
+app.post('/api/ice-config', async (req, res) => {
+  const token = tokenFromReq(req);
+  const rec = token && tokens.get(token);
+  if (!rec || rec.expires < Date.now()) {
+    return res.status(401).json({ ok: false });
+  }
+
+  if (METERED_APP_NAME && METERED_API_KEY) {
+    try {
+      const url = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(METERED_API_KEY);
+      const r = await fetch(url);
+      if (r.ok) {
+        const iceServers = await r.json();
+        console.log('[ice] served metered creds, servers=%d', Array.isArray(iceServers) ? iceServers.length : 0);
+        return res.json({ ok: true, iceServers, source: 'metered' });
+      }
+      console.log('[ice] metered fetch failed status=%d, falling back', r.status);
+    } catch (err) {
+      console.log('[ice] metered error=%s, falling back', err && err.message);
+    }
+  }
+
+  console.log('[ice] served fallback (google stun + open relay turn)');
+  res.json({ ok: true, iceServers: FALLBACK_ICE, source: 'fallback' });
 });
 
 // --- Signaling ---
