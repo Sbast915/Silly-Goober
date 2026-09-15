@@ -44,17 +44,23 @@ app.post('/api/unlock', (req, res) => {
   const now = Date.now();
   const rec = attempts.get(ip) || { count: 0, lockUntil: 0 };
 
+  console.log('[unlock] hit ip=%s hasRealHash=%s hasDecoyHash=%s bodyType=%s',
+    ip, !!REAL_PASS_HASH, !!DECOY_PASS_HASH, typeof (req.body && req.body.passphrase));
+
   if (rec.lockUntil > now) {
+    console.log('[unlock] locked out ip=%s', ip);
     return res.status(429).json({ ok: false });
   }
 
   const { passphrase } = req.body || {};
   if (typeof passphrase !== 'string' || !passphrase) {
+    console.log('[unlock] bad body ip=%s', ip);
     return res.status(400).json({ ok: false });
   }
 
   const isReal = REAL_PASS_HASH && bcrypt.compareSync(passphrase, REAL_PASS_HASH);
   const isDecoy = !isReal && DECOY_PASS_HASH && bcrypt.compareSync(passphrase, DECOY_PASS_HASH);
+  console.log('[unlock] result ip=%s isReal=%s isDecoy=%s', ip, isReal, isDecoy);
 
   if (!isReal && !isDecoy) {
     rec.count += 1;

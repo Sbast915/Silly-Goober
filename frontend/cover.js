@@ -66,11 +66,14 @@
     render(searchInput.value);
   });
 
+  console.log('[cover] cover.js loaded, wiring events');
+
   searchInput.addEventListener('input', function () {
     render(searchInput.value);
   });
 
   searchInput.addEventListener('keydown', function (e) {
+    console.log('[cover] keydown', e.key, 'value=', JSON.stringify(searchInput.value));
     if (e.key === 'Enter') {
       e.preventDefault();
       attemptUnlock(searchInput.value);
@@ -89,6 +92,7 @@
 
   function attemptUnlock(passphrase) {
     var value = (passphrase || '').trim();
+    console.log('[cover] attemptUnlock len=', value.length);
     if (!value) return;
 
     fetch('/api/unlock', {
@@ -96,8 +100,12 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ passphrase: value })
     })
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        console.log('[cover] /api/unlock status=', r.status);
+        return r.json();
+      })
       .then(function (data) {
+        console.log('[cover] /api/unlock body=', JSON.stringify(data));
         if (!data || !data.ok) return; // wrong passphrase: stays a notes app, silently
         if (data.mode === 'real') {
           enterRealCall(data.token);
@@ -105,8 +113,8 @@
           enterDecoy();
         }
       })
-      .catch(function () {
-        // network error: fail silently, stay on the notes app
+      .catch(function (err) {
+        console.log('[cover] /api/unlock error=', err && err.message);
       });
   }
 
