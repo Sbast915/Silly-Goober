@@ -114,22 +114,52 @@ app.post('/api/ice-config', async (req, res) => {
     return res.status(401).json({ ok: false });
   }
 
-  if (METERED_APP_NAME && METERED_API_KEY) {
+  const appLen = METERED_APP_NAME.length;
+  const keyLen = METERED_API_KEY.length;
+  console.log('[ice] request received; METERED_APP_NAME len=%d METERED_API_KEY len=%d', appLen, keyLen);
+
+  if (!METERED_APP_NAME || !METERED_API_KEY) {
+    console.log('[ice] skipping metered - env vars %s%s%s not set',
+      !METERED_APP_NAME ? 'METERED_APP_NAME' : '',
+      (!METERED_APP_NAME && !METERED_API_KEY) ? ' + ' : '',
+      !METERED_API_KEY ? 'METERED_API_KEY' : ''
+    );
+  } else {
+    const url = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(METERED_API_KEY);
+    const redactedUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=<REDACTED len=' + keyLen + '>';
+    console.log('[ice] fetching metered url=%s', redactedUrl);
     try {
-      const url = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(METERED_API_KEY);
       const r = await fetch(url);
+      const bodyText = await r.text();
+      console.log('[ice] metered status=%d content-type=%s body-len=%d body-head=%s',
+        r.status,
+        r.headers.get('content-type') || '(none)',
+        bodyText.length,
+        bodyText.slice(0, 300).replace(/\s+/g, ' ')
+      );
       if (r.ok) {
-        const iceServers = await r.json();
-        console.log('[ice] served metered creds, servers=%d', Array.isArray(iceServers) ? iceServers.length : 0);
-        return res.json({ ok: true, iceServers, source: 'metered' });
+        let iceServers;
+        try {
+          iceServers = JSON.parse(bodyText);
+        } catch (parseErr) {
+          console.log('[ice] metered body not JSON, falling back');
+          iceServers = null;
+        }
+        if (Array.isArray(iceServers) && iceServers.length) {
+          console.log('[ice] serving metered creds, servers=%d', iceServers.length);
+          return res.json({ ok: true, iceServers, source: 'metered' });
+        }
+        console.log('[ice] metered returned non-array or empty (typeof=%s isArray=%s), falling back',
+          typeof iceServers, Array.isArray(iceServers));
+      } else {
+        console.log('[ice] metered non-2xx, falling back');
       }
-      console.log('[ice] metered fetch failed status=%d, falling back', r.status);
     } catch (err) {
-      console.log('[ice] metered error=%s, falling back', err && err.message);
+      console.log('[ice] metered fetch threw: %s (%s)', err && err.message, err && err.name);
     }
   }
 
-  console.log('[ice] served fallback (google stun + open relay turn)');
+  console.log('[ice] serving fallback (google stun + open relay turn)');
   res.json({ ok: true, iceServers: FALLBACK_ICE, source: 'fallback' });
 });
 
@@ -181,5 +211,11 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`listening on ${PORT}`);
+  console.log('listening on ' + PORT);
+  console.log('[startup] env presence: REAL_PASS_HASH=%s DECOY_PASS_HASH=%s METERED_APP_NAME=%s METERED_API_KEY=%s',
+    REAL_PASS_HASH ? '(set len=' + REAL_PASS_HASH.length + ')' : '(UNSET)',
+    DECOY_PASS_HASH ? '(set len=' + DECOY_PASS_HASH.length + ')' : '(UNSET)',
+    METERED_APP_NAME ? '(set="' + METERED_APP_NAME + '")' : '(UNSET)',
+    METERED_API_KEY ? '(set len=' + METERED_API_KEY.length + ')' : '(UNSET)'
+  );
 });
