@@ -16,6 +16,7 @@ const REAL_PASS_HASH = process.env.REAL_PASS_HASH || '';
 const DECOY_PASS_HASH = process.env.DECOY_PASS_HASH || '';
 const METERED_APP_NAME = process.env.METERED_APP_NAME || '';
 const METERED_API_KEY = process.env.METERED_API_KEY || '';
+const METERED_SECRET_KEY = process.env.METERED_SECRET_KEY || '';
 
 const ROOM = 'call';
 const TOKEN_TTL_MS = 5 * 60 * 1000;
@@ -107,6 +108,114 @@ const FALLBACK_ICE = [
   }
 ];
 
+async function fetchMeteredIceViaApiKey(logPrefix) {
+  const url = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(METERED_API_KEY);
+  const redactedUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=<REDACTED len=' + METERED_API_KEY.length + '>';
+  console.log('%s fetching apiKey mode url=%s', logPrefix, redactedUrl);
+  const r = await fetch(url);
+  const bodyText = await r.text();
+  console.log('%s apiKey status=%d ct=%s body-head=%s', logPrefix,
+    r.status, r.headers.get('content-type') || '(none)',
+    bodyText.slice(0, 300).replace(/\s+/g, ' '));
+  if (!r.ok) return null;
+  try {
+    const parsed = JSON.parse(bodyText);
+    if (Array.isArray(parsed) && parsed.length) return parsed;
+  } catch (e) { /* fall through */ }
+  return null;
+}
+
+async function fetchMeteredIceViaSecretKey(logPrefix) {
+  // Step 1: list credentials via v2, using secretKey
+  const listUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v2/turn/credentials?secretKey=' + encodeURIComponent(METERED_SECRET_KEY);
+  const redactedListUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v2/turn/credentials?secretKey=<REDACTED len=' + METERED_SECRET_KEY.length + '>';
+  console.log('%s fetching secretKey mode list url=%s', logPrefix, redactedListUrl);
+  let r = await fetch(listUrl);
+  let bodyText = await r.text();
+  console.log('%s secretKey list status=%d ct=%s body-head=%s', logPrefix,
+    r.status, r.headers.get('content-type') || '(none)',
+    bodyText.slice(0, 300).replace(/\s+/g, ' '));
+  if (!r.ok) return null;
+
+  let listed = null;
+  try { listed = JSON.parse(bodyText); } catch (e) { return null; }
+  const items = listed && Array.isArray(listed.data) ? listed.data : (Array.isArray(listed) ? listed : []);
+  let chosen = items.find(function (c) { return c && !c.expired && c.apiKey; });
+
+  // Step 2: if no non-expired credential exists, create one
+  if (!chosen) {
+    const createUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credential?secretKey=' + encodeURIComponent(METERED_SECRET_KEY);
+    console.log('%s no usable credential, creating via secretKey', logPrefix);
+    r = await fetch(createUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expiryInSeconds: 24 * 60 * 60, label: 'h-calls-auto' })
+    });
+    bodyText = await r.text();
+    console.log('%s secretKey create status=%d body-head=%s', logPrefix,
+      r.status, bodyText.slice(0, 300).replace(/\s+/g, ' '));
+    if (!r.ok) return null;
+    try { chosen = JSON.parse(bodyText); } catch (e) { return null; }
+    if (!chosen || !chosen.apiKey) return null;
+    console.log('%s created credential label=%s (may take up to 2min to propagate)', logPrefix, chosen.label);
+  }
+
+  // Step 3: fetch iceServers using the credential's apiKey
+  const iceUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(chosen.apiKey);
+  console.log('%s fetching ice via credential apiKey label=%s', logPrefix, chosen.label);
+  r = await fetch(iceUrl);
+  bodyText = await r.text();
+  console.log('%s ice fetch status=%d body-head=%s', logPrefix,
+    r.status, bodyText.slice(0, 300).replace(/\s+/g, ' '));
+  if (!r.ok) return null;
+  try {
+    const parsed = JSON.parse(bodyText);
+    if (Array.isArray(parsed) && parsed.length) return parsed;
+  } catch (e) { /* fall through */ }
+  return null;
+}
+
+// Cache last successful Metered result for a short window so we don't hammer their API.
+let iceCache = null; // { iceServers, expires, source }
+const ICE_CACHE_MS = 60 * 1000;
+
+async function getIceServers(logPrefix) {
+  const now = Date.now();
+  if (iceCache && iceCache.expires > now) {
+    console.log('%s cache hit source=%s', logPrefix, iceCache.source);
+    return { iceServers: iceCache.iceServers, source: iceCache.source };
+  }
+
+  if (METERED_APP_NAME && METERED_SECRET_KEY) {
+    try {
+      const iceServers = await fetchMeteredIceViaSecretKey(logPrefix);
+      if (iceServers) {
+        iceCache = { iceServers, expires: now + ICE_CACHE_MS, source: 'metered-secret' };
+        return { iceServers, source: 'metered-secret' };
+      }
+    } catch (err) {
+      console.log('%s secretKey mode threw: %s (%s)', logPrefix, err && err.message, err && err.name);
+    }
+  } else if (METERED_APP_NAME && METERED_API_KEY) {
+    try {
+      const iceServers = await fetchMeteredIceViaApiKey(logPrefix);
+      if (iceServers) {
+        iceCache = { iceServers, expires: now + ICE_CACHE_MS, source: 'metered-apikey' };
+        return { iceServers, source: 'metered-apikey' };
+      }
+    } catch (err) {
+      console.log('%s apiKey mode threw: %s (%s)', logPrefix, err && err.message, err && err.name);
+    }
+  } else {
+    const missing = [];
+    if (!METERED_APP_NAME) missing.push('METERED_APP_NAME');
+    if (!METERED_API_KEY && !METERED_SECRET_KEY) missing.push('METERED_API_KEY or METERED_SECRET_KEY');
+    console.log('%s no metered config (missing: %s)', logPrefix, missing.join(', '));
+  }
+
+  return { iceServers: FALLBACK_ICE, source: 'fallback' };
+}
+
 app.post('/api/ice-config', async (req, res) => {
   const token = tokenFromReq(req);
   const rec = token && tokens.get(token);
@@ -114,53 +223,9 @@ app.post('/api/ice-config', async (req, res) => {
     return res.status(401).json({ ok: false });
   }
 
-  const appLen = METERED_APP_NAME.length;
-  const keyLen = METERED_API_KEY.length;
-  console.log('[ice] request received; METERED_APP_NAME len=%d METERED_API_KEY len=%d', appLen, keyLen);
-
-  if (!METERED_APP_NAME || !METERED_API_KEY) {
-    console.log('[ice] skipping metered - env vars %s%s%s not set',
-      !METERED_APP_NAME ? 'METERED_APP_NAME' : '',
-      (!METERED_APP_NAME && !METERED_API_KEY) ? ' + ' : '',
-      !METERED_API_KEY ? 'METERED_API_KEY' : ''
-    );
-  } else {
-    const url = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(METERED_API_KEY);
-    const redactedUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=<REDACTED len=' + keyLen + '>';
-    console.log('[ice] fetching metered url=%s', redactedUrl);
-    try {
-      const r = await fetch(url);
-      const bodyText = await r.text();
-      console.log('[ice] metered status=%d content-type=%s body-len=%d body-head=%s',
-        r.status,
-        r.headers.get('content-type') || '(none)',
-        bodyText.length,
-        bodyText.slice(0, 300).replace(/\s+/g, ' ')
-      );
-      if (r.ok) {
-        let iceServers;
-        try {
-          iceServers = JSON.parse(bodyText);
-        } catch (parseErr) {
-          console.log('[ice] metered body not JSON, falling back');
-          iceServers = null;
-        }
-        if (Array.isArray(iceServers) && iceServers.length) {
-          console.log('[ice] serving metered creds, servers=%d', iceServers.length);
-          return res.json({ ok: true, iceServers, source: 'metered' });
-        }
-        console.log('[ice] metered returned non-array or empty (typeof=%s isArray=%s), falling back',
-          typeof iceServers, Array.isArray(iceServers));
-      } else {
-        console.log('[ice] metered non-2xx, falling back');
-      }
-    } catch (err) {
-      console.log('[ice] metered fetch threw: %s (%s)', err && err.message, err && err.name);
-    }
-  }
-
-  console.log('[ice] serving fallback (google stun + open relay turn)');
-  res.json({ ok: true, iceServers: FALLBACK_ICE, source: 'fallback' });
+  const result = await getIceServers('[ice]');
+  console.log('[ice] serving source=%s servers=%d', result.source, result.iceServers.length);
+  res.json({ ok: true, iceServers: result.iceServers, source: result.source });
 });
 
 // --- Signaling ---
@@ -212,10 +277,25 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, () => {
   console.log('listening on ' + PORT);
-  console.log('[startup] env presence: REAL_PASS_HASH=%s DECOY_PASS_HASH=%s METERED_APP_NAME=%s METERED_API_KEY=%s',
+  console.log('[startup] env presence: REAL_PASS_HASH=%s DECOY_PASS_HASH=%s METERED_APP_NAME=%s METERED_API_KEY=%s METERED_SECRET_KEY=%s',
     REAL_PASS_HASH ? '(set len=' + REAL_PASS_HASH.length + ')' : '(UNSET)',
     DECOY_PASS_HASH ? '(set len=' + DECOY_PASS_HASH.length + ')' : '(UNSET)',
     METERED_APP_NAME ? '(set="' + METERED_APP_NAME + '")' : '(UNSET)',
-    METERED_API_KEY ? '(set len=' + METERED_API_KEY.length + ')' : '(UNSET)'
+    METERED_API_KEY ? '(set len=' + METERED_API_KEY.length + ')' : '(UNSET)',
+    METERED_SECRET_KEY ? '(set len=' + METERED_SECRET_KEY.length + ')' : '(UNSET)'
   );
+
+  // Self-test at startup: proves whether the configured Metered creds actually work,
+  // without waiting for the first real call to fail.
+  if (METERED_APP_NAME && (METERED_API_KEY || METERED_SECRET_KEY)) {
+    setTimeout(async () => {
+      console.log('[startup] running Metered self-test...');
+      const result = await getIceServers('[startup-selftest]');
+      if (result.source === 'fallback') {
+        console.log('[startup] SELF-TEST FAILED - Metered creds did NOT work, falls back to Open Relay. Check the [startup-selftest] lines above for the exact reason from Metered.');
+      } else {
+        console.log('[startup] SELF-TEST OK - source=%s, servers=%d', result.source, result.iceServers.length);
+      }
+    }, 500);
+  }
 });
