@@ -108,7 +108,7 @@ body {
 
 /* ---- Call UI (shared: real + decoy) ---- */
 
-#call-view, #decoy-view {
+#call-view:not([hidden]), #decoy-view:not([hidden]) {
   position: fixed;
   inset: 0;
   background: #14161a;
