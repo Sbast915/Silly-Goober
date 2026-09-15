@@ -311,22 +311,32 @@ io.on('connection', (socket) => {
   socket.to(ROOM).emit('peer-joined');
 
   socket.on('signal', (payload) => {
+    console.log('[sig] relay signal type=%s from=%s', payload && payload.type, socket.id);
     socket.to(ROOM).emit('signal', payload);
   });
 
   socket.on('call-request', () => {
+    console.log('[sig] relay call-request from=%s', socket.id);
     socket.to(ROOM).emit('call-request');
   });
 
+  socket.on('call-accept', () => {
+    console.log('[sig] relay call-accept from=%s', socket.id);
+    socket.to(ROOM).emit('call-accept');
+  });
+
   socket.on('call-decline', () => {
+    console.log('[sig] relay call-decline from=%s', socket.id);
     socket.to(ROOM).emit('call-decline');
   });
 
   socket.on('call-end', () => {
+    console.log('[sig] relay call-end from=%s', socket.id);
     socket.to(ROOM).emit('call-end');
   });
 
   socket.on('disconnect', () => {
+    console.log('[sig] disconnect id=%s', socket.id);
     socket.to(ROOM).emit('peer-left');
   });
 });
