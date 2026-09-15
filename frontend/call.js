@@ -62,11 +62,23 @@
   var pc = null;
   var pendingCandidates = [];
   var callState = 'idle'; // idle | calling | ringing | in-call
+  var role = 'none';      // set to 'caller' or 'callee' when we take that role
+  var t0 = Date.now();
+  var localCandCount = 0;
+  var remoteCandCount = 0;
 
   function log() {
     var args = Array.prototype.slice.call(arguments);
-    args.unshift('[call]');
+    var elapsed = ((Date.now() - t0) / 1000).toFixed(2);
+    args.unshift('[call ' + role + ' t+' + elapsed + 's]');
     console.log.apply(console, args);
+  }
+
+  function summarizeSdp(sdp) {
+    if (!sdp || !sdp.sdp) return '(empty)';
+    var lines = sdp.sdp.split(/\r?\n/);
+    var mlines = lines.filter(function (l) { return l.indexOf('m=') === 0; }).map(function (l) { return l.slice(0, 30); });
+    return sdp.type + ' bytes=' + sdp.sdp.length + ' m=' + JSON.stringify(mlines);
   }
 
   function setStatus(text) { statusEl.textContent = text; }
@@ -209,52 +221,85 @@
   });
 
   function createPeerConnection() {
-    log('createPeerConnection iceServers=', JSON.stringify(iceServers.map(function (s) { return s.urls; })));
-    var conn = new RTCPeerConnection({ iceServers: iceServers });
-
-    localStream.getTracks().forEach(function (track) {
-      conn.addTrack(track, localStream);
+    var summary = iceServers.map(function (s) {
+      return { urls: s.urls, hasAuth: !!(s.username && s.credential) };
     });
+    log('createPeerConnection iceServers=', JSON.stringify(summary));
+    var conn = new RTCPeerConnection({ iceServers: iceServers });
+    localCandCount = 0;
+    remoteCandCount = 0;
+
+    var trackCount = 0;
+    localStream.getTracks().forEach(function (track) {
+      var sender = conn.addTrack(track, localStream);
+      trackCount++;
+      log('addTrack kind=', track.kind, 'label=', track.label, 'enabled=', track.enabled);
+      void sender;
+    });
+    log('added tracks total=', trackCount);
 
     conn.ontrack = function (e) {
-      log('ontrack kind=', e.track && e.track.kind);
-      remoteVideo.srcObject = e.streams[0];
+      log('EVENT ontrack kind=', e.track && e.track.kind, 'streams=', e.streams && e.streams.length);
+      if (e.streams && e.streams[0]) remoteVideo.srcObject = e.streams[0];
     };
 
     conn.onicecandidate = function (e) {
       if (e.candidate) {
-        log('local ICE candidate type=', e.candidate.type, 'proto=', e.candidate.protocol);
+        localCandCount++;
+        log('EVENT icecandidate LOCAL #' + localCandCount,
+          'type=' + e.candidate.type,
+          'proto=' + e.candidate.protocol,
+          'foundation=' + e.candidate.foundation,
+          'address=' + (e.candidate.address || '?'),
+          'port=' + (e.candidate.port || '?'),
+          'related=' + (e.candidate.relatedAddress || '?') + ':' + (e.candidate.relatedPort || '?')
+        );
         socket.emit('signal', { type: 'candidate', candidate: e.candidate });
       } else {
-        log('local ICE gathering complete');
+        log('EVENT icecandidate LOCAL null (gathering complete). Total local candidates sent=', localCandCount);
       }
     };
 
     conn.onicecandidateerror = function (e) {
-      log('ICE candidate error url=', e.url, 'code=', e.errorCode, 'text=', e.errorText);
+      log('EVENT icecandidateerror url=', e.url, 'address=', e.address, 'port=', e.port,
+        'code=', e.errorCode, 'text=', e.errorText);
     };
 
     conn.oniceconnectionstatechange = function () {
-      log('ICE connection state=', conn.iceConnectionState);
-      if (conn.iceConnectionState === 'failed') {
+      log('EVENT iceconnectionstatechange ->', conn.iceConnectionState,
+        '| gathering=', conn.iceGatheringState,
+        '| connection=', conn.connectionState);
+      if (conn.iceConnectionState === 'checking') {
+        setStatus('Checking...');
+      } else if (conn.iceConnectionState === 'connected' || conn.iceConnectionState === 'completed') {
+        setStatus('Connected');
+      } else if (conn.iceConnectionState === 'failed') {
         setStatus('Connection failed (NAT/TURN)');
+        // Dump candidate-pair stats so we can see what was actually tried
+        conn.getStats().then(function (stats) {
+          var pairs = [];
+          stats.forEach(function (r) {
+            if (r.type === 'candidate-pair') {
+              pairs.push({ state: r.state, nominated: r.nominated, priority: r.priority, local: r.localCandidateId, remote: r.remoteCandidateId });
+            }
+          });
+          log('FAILURE candidate-pair stats=', JSON.stringify(pairs));
+        });
       } else if (conn.iceConnectionState === 'disconnected') {
         setStatus('Reconnecting...');
-      } else if (conn.iceConnectionState === 'checking') {
-        setStatus('Checking...');
       }
     };
 
     conn.onicegatheringstatechange = function () {
-      log('ICE gathering state=', conn.iceGatheringState);
+      log('EVENT icegatheringstatechange ->', conn.iceGatheringState);
     };
 
     conn.onsignalingstatechange = function () {
-      log('signaling state=', conn.signalingState);
+      log('EVENT signalingstatechange ->', conn.signalingState);
     };
 
     conn.onconnectionstatechange = function () {
-      log('connection state=', conn.connectionState);
+      log('EVENT connectionstatechange ->', conn.connectionState);
       if (conn.connectionState === 'connected') {
         setStatus('Connected');
       } else if (conn.connectionState === 'failed') {
@@ -264,18 +309,34 @@
       }
     };
 
+    conn.onnegotiationneeded = function () {
+      log('EVENT negotiationneeded');
+    };
+
+    log('PC created. initial states: signaling=', conn.signalingState,
+      'iceConnection=', conn.iceConnectionState,
+      'iceGathering=', conn.iceGatheringState,
+      'connection=', conn.connectionState);
+
     return conn;
   }
 
   async function flushPendingCandidates() {
+    if (pendingCandidates.length) log('flushing', pendingCandidates.length, 'queued ICE candidates');
     while (pendingCandidates.length) {
       var c = pendingCandidates.shift();
-      try { await pc.addIceCandidate(c); } catch (e) { log('addIceCandidate error', e && e.message); }
+      try {
+        await pc.addIceCandidate(c);
+        log('flushed queued candidate type=', c.type, 'proto=', c.protocol);
+      } catch (e) { log('flush addIceCandidate error', e && e.message); }
     }
   }
 
   async function startCall() {
     if (!localStream) await initMedia();
+    t0 = Date.now();
+    role = 'caller';
+    log('startCall clicked, becoming CALLER, sending call-request');
     setCallState('calling');
     setStatus('Calling...');
     socket.emit('call-request');
@@ -297,11 +358,15 @@
   endBtn.addEventListener('click', function () { endCall(true); });
 
   acceptBtn.addEventListener('click', async function () {
-    log('accept clicked');
+    t0 = Date.now();
+    role = 'callee';
+    log('accept clicked, becoming CALLEE');
     incomingCall.hidden = true; // immediate feedback, don't wait for setCallState
     if (!localStream) await initMedia();
     await fetchIceConfig();
+    log('emitting call-accept');
     socket.emit('call-accept');
+    log('creating PC as callee (waiting for offer from caller)');
     pc = createPeerConnection();
     setCallState('in-call');
     setStatus('Connecting...');
@@ -347,15 +412,23 @@
   });
 
   socket.on('call-accept', async function () {
-    log('<- call-accept');
+    log('<- call-accept received (I am caller, my peer accepted)');
     if (!localStream) await initMedia();
     await fetchIceConfig();
+    log('creating PC as caller');
     pc = createPeerConnection();
     setCallState('in-call');
     setStatus('Connecting...');
+
+    log('SDP: createOffer() begin');
     var offer = await pc.createOffer();
+    log('SDP: createOffer() done ->', summarizeSdp(offer));
+
+    log('SDP: setLocalDescription(offer) begin');
     await pc.setLocalDescription(offer);
-    log('-> signal offer');
+    log('SDP: setLocalDescription(offer) DONE. signaling=', pc.signalingState);
+
+    log('-> emit signal offer');
     socket.emit('signal', { type: 'offer', sdp: pc.localDescription });
   });
 
@@ -375,35 +448,55 @@
 
   socket.on('signal', async function (payload) {
     if (!payload) return;
-    log('<- signal type=', payload.type);
 
     if (payload.type === 'offer') {
+      log('<- signal OFFER', summarizeSdp(payload.sdp));
       if (!pc) {
+        log('no PC yet on offer, creating one');
         await fetchIceConfig();
         pc = createPeerConnection();
       }
+      log('SDP: setRemoteDescription(offer) begin');
       await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+      log('SDP: setRemoteDescription(offer) DONE. signaling=', pc.signalingState);
       await flushPendingCandidates();
+
+      log('SDP: createAnswer() begin');
       var answer = await pc.createAnswer();
+      log('SDP: createAnswer() done ->', summarizeSdp(answer));
+
+      log('SDP: setLocalDescription(answer) begin');
       await pc.setLocalDescription(answer);
-      log('-> signal answer');
+      log('SDP: setLocalDescription(answer) DONE. signaling=', pc.signalingState);
+
+      log('-> emit signal answer');
       socket.emit('signal', { type: 'answer', sdp: pc.localDescription });
       setCallState('in-call');
     } else if (payload.type === 'answer') {
+      log('<- signal ANSWER', summarizeSdp(payload.sdp));
       if (pc) {
+        log('SDP: setRemoteDescription(answer) begin');
         await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+        log('SDP: setRemoteDescription(answer) DONE. signaling=', pc.signalingState);
         await flushPendingCandidates();
+      } else {
+        log('WARNING: received answer but no PC exists');
       }
     } else if (payload.type === 'candidate') {
       var candidate = new RTCIceCandidate(payload.candidate);
+      remoteCandCount++;
+      var desc = 'REMOTE #' + remoteCandCount +
+        ' type=' + (candidate.type || '?') +
+        ' proto=' + (candidate.protocol || '?') +
+        ' addr=' + (candidate.address || '?') + ':' + (candidate.port || '?');
       if (pc && pc.remoteDescription) {
         try {
           await pc.addIceCandidate(candidate);
-          log('added remote ICE candidate');
-        } catch (e) { log('addIceCandidate error', e && e.message); }
+          log('<- ICE candidate', desc, 'ADDED');
+        } catch (e) { log('<- ICE candidate', desc, 'addIceCandidate error', e && e.message); }
       } else {
         pendingCandidates.push(candidate);
-        log('queued remote ICE candidate (no remoteDescription yet)');
+        log('<- ICE candidate', desc, 'QUEUED (no remoteDescription yet). queue-size=', pendingCandidates.length);
       }
     }
   });
