@@ -11,7 +11,9 @@
     camOff: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M21 6.5l-4 4V7a1 1 0 0 0-1-1H9.82L21 17.18V6.5zM3.27 2L2 3.27 4.73 6H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12c.21 0 .39-.08.55-.18L19.73 21 21 19.73 3.27 2z"/></svg>',
     hangup: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1c0 .39-.23.74-.56.9-.98.49-1.87 1.12-2.66 1.85-.18.18-.43.28-.7.28-.28 0-.53-.11-.71-.29L.29 13.08a.996.996 0 0 1 0-1.41C3.34 8.78 7.46 7 12 7s8.66 1.78 11.71 4.67c.18.18.29.43.29.71 0 .28-.11.53-.29.71l-2.48 2.48c-.18.18-.43.29-.71.29-.27 0-.52-.1-.7-.28a11.27 11.27 0 0 0-2.67-1.85.996.996 0 0 1-.55-.9v-3.1C15.15 9.25 13.6 9 12 9z"/></svg>',
     call: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/></svg>',
-    settings: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>'
+    settings: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>',
+    expand: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
+    shrink: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>'
   };
 
   callView.innerHTML =
@@ -25,16 +27,22 @@
     '  <button class="dc-icon-btn" id="settings-btn" title="Devices">' + ICONS.settings + '</button>' +
     '</div>' +
 
-    '<div class="dc-stage">' +
-    '  <div class="dc-tile dc-tile-remote" id="tile-remote">' +
-    '    <video id="remote-video" autoplay playsinline></video>' +
-    '    <div class="dc-avatar dc-avatar-remote">P</div>' +
-    '    <div class="dc-tile-label">Peer</div>' +
+    '<div class="dc-stage" id="stage">' +
+    '  <div class="dc-empty-state" id="stage-empty">' +
+    '    <div class="dc-empty-title" id="empty-title">Getting camera ready...</div>' +
+    '    <div class="dc-empty-sub" id="empty-sub"></div>' +
     '  </div>' +
-    '  <div class="dc-tile dc-tile-local" id="tile-local">' +
+    '  <div class="dc-tile dc-tile-remote" id="tile-remote" hidden>' +
+    '    <video id="remote-video" autoplay playsinline></video>' +
+    '    <div class="dc-tile-label">Peer</div>' +
+    '    <button class="dc-tile-expand" id="expand-remote-btn" title="Expand" aria-label="Expand peer tile">' + ICONS.expand + '</button>' +
+    '    <button class="dc-tile-shrink" id="shrink-remote-btn" title="Shrink" aria-label="Shrink peer tile" hidden>' + ICONS.shrink + '</button>' +
+    '  </div>' +
+    '  <div class="dc-tile dc-tile-local" id="tile-local" hidden>' +
     '    <video id="local-video" autoplay playsinline muted></video>' +
-    '    <div class="dc-avatar dc-avatar-local">Y</div>' +
     '    <div class="dc-tile-label">You</div>' +
+    '    <button class="dc-tile-expand" id="expand-local-btn" title="Expand" aria-label="Expand your tile">' + ICONS.expand + '</button>' +
+    '    <button class="dc-tile-shrink" id="shrink-local-btn" title="Shrink" aria-label="Shrink your tile" hidden>' + ICONS.shrink + '</button>' +
     '  </div>' +
     '</div>' +
 
@@ -97,6 +105,14 @@
   var tileLocal = document.getElementById('tile-local');
   var tileRemote = document.getElementById('tile-remote');
   var silentAudio = document.getElementById('silent-keepalive');
+  var stageEl = document.getElementById('stage');
+  var stageEmpty = document.getElementById('stage-empty');
+  var emptyTitle = document.getElementById('empty-title');
+  var emptySub = document.getElementById('empty-sub');
+  var expandRemoteBtn = document.getElementById('expand-remote-btn');
+  var expandLocalBtn = document.getElementById('expand-local-btn');
+  var shrinkRemoteBtn = document.getElementById('shrink-remote-btn');
+  var shrinkLocalBtn = document.getElementById('shrink-local-btn');
 
   var FALLBACK_ICE = [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -127,6 +143,18 @@
   var silentCtx = null;
   var silentOsc = null;
   var wasInCallBeforeHidden = false;
+  var hasLocalMedia = false;
+  var hasRemoteMedia = false;
+  var focusMode = 'none'; // 'none' | 'local' | 'remote'
+
+  // Voice-activity detection
+  var vadCtx = null;
+  var vadLocalSource = null, vadLocalAnalyser = null;
+  var vadRemoteSource = null, vadRemoteAnalyser = null;
+  var vadRafId = 0;
+  var localSpeakingUntil = 0, remoteSpeakingUntil = 0;
+  var VAD_THRESHOLD_RMS = 0.05;   // ~-26dB
+  var VAD_HANG_MS = 250;          // keep ring on 250ms past last loud sample (hysteresis)
 
   function log() {
     var args = Array.prototype.slice.call(arguments);
@@ -153,11 +181,9 @@
     incomingCall.hidden = state !== 'ringing';
     callBtn.hidden = state !== 'idle';
     endBtn.hidden = state === 'idle';
-
-    // tiles
-    tileRemote.classList.toggle('dc-tile-active', state === 'in-call');
-    tileLocal.classList.toggle('dc-tile-active', state === 'in-call');
     callView.classList.toggle('dc-in-call', state === 'in-call');
+
+    refreshStage();
 
     if (state === 'in-call') {
       acquireWakeLock();
@@ -165,8 +191,36 @@
     } else if (state === 'idle') {
       releaseWakeLock();
       stopSilentKeepalive();
+      stopVoiceActivityDetection();
       iAmCalling = false;
+      resetFocus();
     }
+  }
+
+  function refreshStage() {
+    tileLocal.hidden = !hasLocalMedia;
+    tileRemote.hidden = !hasRemoteMedia;
+
+    if (!hasLocalMedia && !hasRemoteMedia) {
+      stageEmpty.hidden = false;
+      emptyTitle.textContent = 'Getting camera ready...';
+      emptySub.textContent = '';
+    } else if (hasLocalMedia && !hasRemoteMedia && callState !== 'idle') {
+      stageEmpty.hidden = false;
+      emptyTitle.textContent = callState === 'calling' ? 'Calling...' : 'Waiting for peer...';
+      emptySub.textContent = '';
+    } else {
+      stageEmpty.hidden = true;
+    }
+  }
+
+  function resetFocus() {
+    focusMode = 'none';
+    stageEl.classList.remove('dc-focus-local', 'dc-focus-remote');
+    expandLocalBtn.hidden = false;
+    expandRemoteBtn.hidden = false;
+    shrinkLocalBtn.hidden = true;
+    shrinkRemoteBtn.hidden = true;
   }
 
   async function fetchIceConfig() {
@@ -201,7 +255,9 @@
         video: true
       });
       localVideo.srcObject = localStream;
+      hasLocalMedia = true;
       setStatus('Ready', 'ready');
+      refreshStage();
       await populateDeviceLists();
     } catch (err) {
       log('getUserMedia error', err && err.name, err && err.message);
@@ -414,6 +470,9 @@
       if (e.streams && e.streams[0]) {
         remoteVideo.srcObject = e.streams[0];
         remoteAudio.srcObject = e.streams[0];
+        hasRemoteMedia = true;
+        refreshStage();
+        startVoiceActivityDetection(e.streams[0]);
       }
     };
 
@@ -473,9 +532,13 @@
     if (pc) { try { pc.close(); } catch (e) {} pc = null; }
     remoteVideo.srcObject = null;
     remoteAudio.srcObject = null;
+    hasRemoteMedia = false;
     pendingCandidates = [];
     role = 'none';
     iAmCalling = false;
+    tileRemote.classList.remove('dc-speaking');
+    tileLocal.classList.remove('dc-speaking');
+    stopVoiceActivityDetection();
     setCallState('idle');
     setStatus('Ready', 'ready');
   }
@@ -634,6 +697,97 @@
       }
     }
   });
+
+  // ---------- Voice-activity detection ----------
+  function ensureVadContext() {
+    if (vadCtx) return vadCtx;
+    try {
+      vadCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (err) { log('VAD AudioContext failed', err && err.message); vadCtx = null; }
+    return vadCtx;
+  }
+
+  function attachAnalyser(stream) {
+    var ctx = ensureVadContext();
+    if (!ctx) return null;
+    var audioTracks = stream && stream.getAudioTracks ? stream.getAudioTracks() : [];
+    if (!audioTracks.length) return null;
+    var src = ctx.createMediaStreamSource(stream);
+    var analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    analyser.smoothingTimeConstant = 0.3;
+    src.connect(analyser); // analyser is a tap - no need to reach destination
+    return { source: src, analyser: analyser, buffer: new Uint8Array(analyser.frequencyBinCount) };
+  }
+
+  function computeRms(handle) {
+    handle.analyser.getByteTimeDomainData(handle.buffer);
+    var sum = 0;
+    for (var i = 0; i < handle.buffer.length; i++) {
+      var v = (handle.buffer[i] - 128) / 128;
+      sum += v * v;
+    }
+    return Math.sqrt(sum / handle.buffer.length);
+  }
+
+  function startVoiceActivityDetection(remoteStream) {
+    // (Re-)attach local
+    if (localStream && !vadLocalAnalyser) {
+      var lh = attachAnalyser(localStream);
+      if (lh) { vadLocalSource = lh.source; vadLocalAnalyser = lh; }
+    }
+    // Attach remote
+    if (remoteStream && !vadRemoteAnalyser) {
+      var rh = attachAnalyser(remoteStream);
+      if (rh) { vadRemoteSource = rh.source; vadRemoteAnalyser = rh; }
+    }
+    if (vadRafId) return;
+    log('VAD started');
+    var tick = function () {
+      var now = Date.now();
+      if (vadLocalAnalyser) {
+        var lRms = computeRms(vadLocalAnalyser);
+        if (lRms > VAD_THRESHOLD_RMS) localSpeakingUntil = now + VAD_HANG_MS;
+        tileLocal.classList.toggle('dc-speaking', now < localSpeakingUntil);
+      }
+      if (vadRemoteAnalyser) {
+        var rRms = computeRms(vadRemoteAnalyser);
+        if (rRms > VAD_THRESHOLD_RMS) remoteSpeakingUntil = now + VAD_HANG_MS;
+        tileRemote.classList.toggle('dc-speaking', now < remoteSpeakingUntil);
+      }
+      vadRafId = requestAnimationFrame(tick);
+    };
+    vadRafId = requestAnimationFrame(tick);
+  }
+
+  function stopVoiceActivityDetection() {
+    if (vadRafId) { cancelAnimationFrame(vadRafId); vadRafId = 0; }
+    tileLocal.classList.remove('dc-speaking');
+    tileRemote.classList.remove('dc-speaking');
+    try { if (vadLocalSource) vadLocalSource.disconnect(); } catch (e) {}
+    try { if (vadRemoteSource) vadRemoteSource.disconnect(); } catch (e) {}
+    vadLocalSource = null; vadRemoteSource = null;
+    vadLocalAnalyser = null; vadRemoteAnalyser = null;
+    if (vadCtx) { try { vadCtx.close(); } catch (e) {} vadCtx = null; }
+    localSpeakingUntil = 0; remoteSpeakingUntil = 0;
+    log('VAD stopped');
+  }
+
+  // ---------- Focus mode (expand tile, other becomes PiP) ----------
+  function setFocus(mode) {
+    focusMode = mode;
+    stageEl.classList.toggle('dc-focus-local', mode === 'local');
+    stageEl.classList.toggle('dc-focus-remote', mode === 'remote');
+    expandLocalBtn.hidden = (mode === 'local');
+    expandRemoteBtn.hidden = (mode === 'remote');
+    shrinkLocalBtn.hidden = (mode !== 'local');
+    shrinkRemoteBtn.hidden = (mode !== 'remote');
+    log('focus mode ->', mode);
+  }
+  expandLocalBtn.addEventListener('click', function (e) { e.stopPropagation(); setFocus('local'); });
+  expandRemoteBtn.addEventListener('click', function (e) { e.stopPropagation(); setFocus('remote'); });
+  shrinkLocalBtn.addEventListener('click', function (e) { e.stopPropagation(); setFocus('none'); });
+  shrinkRemoteBtn.addEventListener('click', function (e) { e.stopPropagation(); setFocus('none'); });
 
   setCallState('idle');
   initMedia();
