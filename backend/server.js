@@ -26,6 +26,8 @@ const tokens = new Map();
 
 // socket.id -> { name }
 const presence = new Map();
+// Ordered set of socket ids currently allowed in the call slot (max 2)
+const callParticipants = new Set();
 
 function sanitizeName(raw) {
   if (typeof raw !== 'string') return 'Guest';
@@ -34,14 +36,29 @@ function sanitizeName(raw) {
 }
 
 function broadcastPresence() {
-  const roomSet = io.sockets.adapter.rooms.get(ROOM);
-  if (!roomSet) return;
   const peers = [];
-  for (const id of roomSet) {
+  for (const [id] of io.sockets.sockets) {
     const info = presence.get(id) || {};
-    peers.push({ id, name: info.name || 'Guest' });
+    peers.push({
+      id,
+      name: info.name || 'Guest',
+      isParticipant: callParticipants.has(id)
+    });
   }
-  io.to(ROOM).emit('presence', { peers });
+  io.emit('presence', { peers });
+}
+
+function tryPromoteObserver() {
+  if (callParticipants.size >= 2) return;
+  for (const [id, sock] of io.sockets.sockets) {
+    if (callParticipants.size >= 2) break;
+    if (!callParticipants.has(id)) {
+      callParticipants.add(id);
+      sock.join(ROOM);
+      sock.emit('role-assigned', { role: 'participant' });
+      console.log('[sig] promoted observer -> participant id=%s', id);
+    }
+  }
 }
 
 // crude per-IP throttle for unlock attempts
@@ -320,15 +337,20 @@ function roomSize() {
   return room ? room.size : 0;
 }
 
-io.on('connection', (socket) => {
-  if (roomSize() >= 2) {
-    socket.emit('room-full');
-    socket.disconnect(true);
-    return;
-  }
+function assertParticipant(socket) {
+  return callParticipants.has(socket.id);
+}
 
-  socket.join(ROOM);
-  socket.to(ROOM).emit('peer-joined');
+io.on('connection', (socket) => {
+  const isParticipant = callParticipants.size < 2;
+  if (isParticipant) {
+    callParticipants.add(socket.id);
+    socket.join(ROOM);
+    socket.to(ROOM).emit('peer-joined');
+  }
+  socket.emit('role-assigned', { role: isParticipant ? 'participant' : 'observer' });
+  console.log('[sig] connect id=%s role=%s participants=%d', socket.id,
+    isParticipant ? 'participant' : 'observer', callParticipants.size);
 
   socket.on('hello', (payload) => {
     const name = sanitizeName(payload && payload.name);
@@ -338,41 +360,50 @@ io.on('connection', (socket) => {
   });
 
   socket.on('media-state', (payload) => {
-    // Relay a peer's camera/mic on/off state (visual only, no auth in payload).
+    if (!assertParticipant(socket)) return;
     socket.to(ROOM).emit('media-state', payload);
   });
 
   socket.on('signal', (payload) => {
+    if (!assertParticipant(socket)) return;
     console.log('[sig] relay signal type=%s from=%s', payload && payload.type, socket.id);
     socket.to(ROOM).emit('signal', payload);
   });
 
   socket.on('call-request', () => {
+    if (!assertParticipant(socket)) return;
     console.log('[sig] relay call-request from=%s', socket.id);
-    // Include sender's socket id so the receiver can resolve glare
-    // (simultaneous mutual call-requests) with a deterministic tie-break.
     socket.to(ROOM).emit('call-request', { fromId: socket.id });
   });
 
   socket.on('call-accept', () => {
+    if (!assertParticipant(socket)) return;
     console.log('[sig] relay call-accept from=%s', socket.id);
     socket.to(ROOM).emit('call-accept');
   });
 
   socket.on('call-decline', () => {
+    if (!assertParticipant(socket)) return;
     console.log('[sig] relay call-decline from=%s', socket.id);
     socket.to(ROOM).emit('call-decline');
   });
 
   socket.on('call-end', () => {
+    if (!assertParticipant(socket)) return;
     console.log('[sig] relay call-end from=%s', socket.id);
     socket.to(ROOM).emit('call-end');
   });
 
   socket.on('disconnect', () => {
-    console.log('[sig] disconnect id=%s', socket.id);
+    const wasParticipant = callParticipants.has(socket.id);
+    console.log('[sig] disconnect id=%s wasParticipant=%s', socket.id, wasParticipant);
+    callParticipants.delete(socket.id);
     presence.delete(socket.id);
-    socket.to(ROOM).emit('peer-left');
+    // Only notify peer-left to the *other* participant (avoids peer-left
+    // storms into the room from observer disconnects).
+    if (wasParticipant) socket.to(ROOM).emit('peer-left');
+    // Auto-promote any waiting observer into the freed slot.
+    if (wasParticipant) tryPromoteObserver();
     broadcastPresence();
   });
 

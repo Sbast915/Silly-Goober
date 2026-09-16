@@ -38,19 +38,23 @@
     '    <div class="dc-empty-title" id="empty-title">Getting camera ready...</div>' +
     '    <div class="dc-empty-sub" id="empty-sub"></div>' +
     '  </div>' +
+    '  <div class="dc-presence-list" id="presence-list" hidden>' +
+    '    <div class="dc-presence-list-title">Who’s here</div>' +
+    '    <ul class="dc-presence-list-items" id="presence-list-items"></ul>' +
+    '  </div>' +
     '  <div class="dc-tile dc-tile-remote" id="tile-remote" hidden>' +
     '    <video id="remote-video" autoplay playsinline></video>' +
-    '    <div class="dc-tile-avatar" id="remote-avatar-overlay"><div class="dc-avatar-circle" id="remote-avatar-circle">?</div><div class="dc-avatar-name" id="remote-avatar-name">Peer</div></div>' +
+    '    <div class="dc-tile-avatar" id="remote-avatar-overlay"><div class="dc-avatar-circle" id="remote-avatar-circle">?</div></div>' +
     '    <div class="dc-tile-label" id="remote-tile-label">Peer</div>' +
-    '    <button class="dc-tile-expand" id="expand-remote-btn" title="Expand" aria-label="Expand peer tile">' + ICONS.expand + '</button>' +
-    '    <button class="dc-tile-shrink" id="shrink-remote-btn" title="Shrink" aria-label="Shrink peer tile" hidden>' + ICONS.shrink + '</button>' +
+    '    <button type="button" class="dc-tile-expand" id="expand-remote-btn" title="Expand" aria-label="Expand peer tile">' + ICONS.expand + '</button>' +
+    '    <button type="button" class="dc-tile-shrink" id="shrink-remote-btn" title="Shrink" aria-label="Shrink peer tile" hidden>' + ICONS.shrink + '</button>' +
     '  </div>' +
     '  <div class="dc-tile dc-tile-local" id="tile-local" hidden>' +
     '    <video id="local-video" autoplay playsinline muted></video>' +
-    '    <div class="dc-tile-avatar" id="local-avatar-overlay"><div class="dc-avatar-circle" id="local-avatar-circle">?</div><div class="dc-avatar-name" id="local-avatar-name">You</div></div>' +
+    '    <div class="dc-tile-avatar" id="local-avatar-overlay"><div class="dc-avatar-circle" id="local-avatar-circle">?</div></div>' +
     '    <div class="dc-tile-label" id="local-tile-label">You</div>' +
-    '    <button class="dc-tile-expand" id="expand-local-btn" title="Expand" aria-label="Expand your tile">' + ICONS.expand + '</button>' +
-    '    <button class="dc-tile-shrink" id="shrink-local-btn" title="Shrink" aria-label="Shrink your tile" hidden>' + ICONS.shrink + '</button>' +
+    '    <button type="button" class="dc-tile-expand" id="expand-local-btn" title="Expand" aria-label="Expand your tile">' + ICONS.expand + '</button>' +
+    '    <button type="button" class="dc-tile-shrink" id="shrink-local-btn" title="Shrink" aria-label="Shrink your tile" hidden>' + ICONS.shrink + '</button>' +
     '  </div>' +
     '</div>' +
 
@@ -127,8 +131,8 @@
   var remoteTileLabel = document.getElementById('remote-tile-label');
   var localAvatarCircle = document.getElementById('local-avatar-circle');
   var remoteAvatarCircle = document.getElementById('remote-avatar-circle');
-  var localAvatarName = document.getElementById('local-avatar-name');
-  var remoteAvatarName = document.getElementById('remote-avatar-name');
+  var presenceList = document.getElementById('presence-list');
+  var presenceListItems = document.getElementById('presence-list-items');
 
   // Touch detection: on touch devices there is no hover, so we force
   // affordances (expand button etc.) to be fully visible.
@@ -200,14 +204,15 @@
     localTileLabel.textContent = myName;
     localAvatarCircle.textContent = initialOf(myName);
     localAvatarCircle.style.background = colorForName(myName);
-    localAvatarName.textContent = myName;
 
     remoteTileLabel.textContent = peerName;
     remoteAvatarCircle.textContent = initialOf(peerName);
     remoteAvatarCircle.style.background = colorForName(peerName);
-    remoteAvatarName.textContent = peerName;
   }
   applyIdentity();
+
+  // ---------- Role (participant vs observer) ----------
+  var myRole = 'participant'; // updated when server sends 'role-assigned'
 
   function log() {
     var args = Array.prototype.slice.call(arguments);
@@ -260,8 +265,12 @@
     tileLocal.hidden = !hasLocalMedia;
     tileRemote.hidden = !hasRemoteMedia;
 
-    if (!hasLocalMedia && !hasRemoteMedia) {
-      stageEmpty.hidden = false;
+    var showPresenceList = (callState === 'idle');
+    if (presenceList) presenceList.hidden = !showPresenceList;
+
+    if (!hasLocalMedia && !hasRemoteMedia && callState === 'idle') {
+      // stage-empty covers early "loading camera" only when there's no other content
+      stageEmpty.hidden = !!(presenceList && !presenceList.hidden);
       emptyTitle.textContent = 'Getting camera ready...';
       emptySub.textContent = '';
     } else if (hasLocalMedia && !hasRemoteMedia && callState !== 'idle') {
@@ -696,19 +705,52 @@
 
   function refreshPresenceUI(peers) {
     var others = peers.filter(function (p) { return p.id !== socket.id; });
-    var count = peers.length;
-    if (others.length === 0) {
-      presenceText.textContent = 'Only you online';
-      presencePill.classList.remove('dc-presence-online');
-    } else {
-      // Set peer name & avatar based on the OTHER participant.
-      peerName = others[0].name || 'Peer';
+    var otherParticipants = others.filter(function (p) { return p.isParticipant; });
+
+    // Header pill (compact summary)
+    if (otherParticipants.length > 0) {
+      peerName = otherParticipants[0].name || 'Peer';
       applyIdentity();
       presenceText.textContent = peerName + ' online';
       presencePill.classList.add('dc-presence-online');
-      // Refresh media-session metadata now that we know peer name
       if (callState === 'in-call') setupMediaSession();
+    } else {
+      presenceText.textContent = others.length ? (others.length + ' waiting') : 'Only you online';
+      presencePill.classList.remove('dc-presence-online');
     }
+
+    // Full centered presence list (pre-call)
+    presenceListItems.innerHTML = '';
+    // Sort: self first, then participants, then observers
+    var sorted = peers.slice().sort(function (a, b) {
+      if (a.id === socket.id) return -1;
+      if (b.id === socket.id) return 1;
+      if (a.isParticipant !== b.isParticipant) return a.isParticipant ? -1 : 1;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+    sorted.forEach(function (p) {
+      var isMe = p.id === socket.id;
+      var li = document.createElement('li');
+      li.className = 'dc-presence-item' +
+        (p.isParticipant ? '' : ' dc-presence-item-observer') +
+        (isMe ? ' dc-presence-item-me' : '');
+      var av = document.createElement('span');
+      av.className = 'dc-presence-item-avatar';
+      av.textContent = initialOf(p.name);
+      av.style.background = colorForName(p.name);
+      var nm = document.createElement('span');
+      nm.className = 'dc-presence-item-name';
+      nm.textContent = p.name + (isMe ? ' (you)' : '');
+      var badge = document.createElement('span');
+      badge.className = 'dc-presence-item-badge';
+      badge.textContent = p.isParticipant ? 'in call room' : 'observing';
+      li.appendChild(av);
+      li.appendChild(nm);
+      li.appendChild(badge);
+      presenceListItems.appendChild(li);
+    });
+
+    refreshStage();
   }
 
   // ---------- Signaling ----------
@@ -783,8 +825,22 @@
 
   socket.on('presence', function (msg) {
     var peers = (msg && Array.isArray(msg.peers)) ? msg.peers : [];
-    log('<- presence peers=', peers.map(function (p) { return p.name; }).join(', '));
+    log('<- presence peers=', peers.map(function (p) { return p.name + '(' + (p.isParticipant ? 'P' : 'O') + ')'; }).join(', '));
     refreshPresenceUI(peers);
+  });
+
+  socket.on('role-assigned', function (msg) {
+    var newRole = (msg && msg.role) || 'participant';
+    log('<- role-assigned', newRole);
+    myRole = newRole;
+    callBtn.disabled = (newRole === 'observer');
+    callBtn.title = (newRole === 'observer') ? 'Call slot full - you are observing' : 'Call';
+    document.body.classList.toggle('is-observer', newRole === 'observer');
+    if (newRole === 'observer') {
+      setStatus('Observer mode - call slot full', 'connecting');
+    } else if (hasLocalMedia) {
+      setStatus('Ready to go!', 'ready');
+    }
   });
 
   socket.on('media-state', function (msg) {
@@ -917,12 +973,29 @@
     expandRemoteBtn.hidden = (mode === 'remote');
     shrinkLocalBtn.hidden = (mode !== 'local');
     shrinkRemoteBtn.hidden = (mode !== 'remote');
-    log('focus mode ->', mode);
+    log('focus mode ->', mode, 'stageClass=', stageEl.className);
   }
-  expandLocalBtn.addEventListener('click', function (e) { e.stopPropagation(); setFocus('local'); });
-  expandRemoteBtn.addEventListener('click', function (e) { e.stopPropagation(); setFocus('remote'); });
-  shrinkLocalBtn.addEventListener('click', function (e) { e.stopPropagation(); setFocus('none'); });
-  shrinkRemoteBtn.addEventListener('click', function (e) { e.stopPropagation(); setFocus('none'); });
+  function wireFocusBtn(btn, mode, label) {
+    var handler = function (e) {
+      log('BUTTON CLICK', label, 'currentMode=', focusMode, 'newMode=', mode, 'target=', e.target && e.target.id);
+      e.preventDefault();
+      e.stopPropagation();
+      setFocus(mode);
+    };
+    // Register both click and touchend for maximum reliability across
+    // devices, particularly iOS Safari where ghost taps can suppress click.
+    btn.addEventListener('click', handler);
+    btn.addEventListener('touchend', function (e) {
+      // Prevent the synthetic click that would follow on some browsers,
+      // avoiding double-fire, while still handling the tap.
+      e.preventDefault();
+      handler(e);
+    }, { passive: false });
+  }
+  wireFocusBtn(expandLocalBtn, 'local', 'expand-local');
+  wireFocusBtn(expandRemoteBtn, 'remote', 'expand-remote');
+  wireFocusBtn(shrinkLocalBtn, 'none', 'shrink-local');
+  wireFocusBtn(shrinkRemoteBtn, 'none', 'shrink-remote');
 
   setCallState('idle');
   initMedia();
