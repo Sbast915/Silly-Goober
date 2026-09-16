@@ -317,7 +317,9 @@ io.on('connection', (socket) => {
 
   socket.on('call-request', () => {
     console.log('[sig] relay call-request from=%s', socket.id);
-    socket.to(ROOM).emit('call-request');
+    // Include sender's socket id so the receiver can resolve glare
+    // (simultaneous mutual call-requests) with a deterministic tie-break.
+    socket.to(ROOM).emit('call-request', { fromId: socket.id });
   });
 
   socket.on('call-accept', () => {
