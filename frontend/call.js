@@ -24,7 +24,13 @@
     '    <span class="dc-channel-hash">#</span>' +
     '    <span class="dc-channel-name">private-voice</span>' +
     '  </div>' +
-    '  <button class="dc-icon-btn" id="settings-btn" title="Devices">' + ICONS.settings + '</button>' +
+    '  <div class="dc-header-right">' +
+    '    <div class="dc-presence" id="presence-pill" title="Who’s here">' +
+    '      <span class="dc-presence-dot"></span>' +
+    '      <span class="dc-presence-text" id="presence-text">1 online</span>' +
+    '    </div>' +
+    '    <button class="dc-icon-btn" id="settings-btn" title="Devices">' + ICONS.settings + '</button>' +
+    '  </div>' +
     '</div>' +
 
     '<div class="dc-stage" id="stage">' +
@@ -34,13 +40,15 @@
     '  </div>' +
     '  <div class="dc-tile dc-tile-remote" id="tile-remote" hidden>' +
     '    <video id="remote-video" autoplay playsinline></video>' +
-    '    <div class="dc-tile-label">Peer</div>' +
+    '    <div class="dc-tile-avatar" id="remote-avatar-overlay"><div class="dc-avatar-circle" id="remote-avatar-circle">?</div><div class="dc-avatar-name" id="remote-avatar-name">Peer</div></div>' +
+    '    <div class="dc-tile-label" id="remote-tile-label">Peer</div>' +
     '    <button class="dc-tile-expand" id="expand-remote-btn" title="Expand" aria-label="Expand peer tile">' + ICONS.expand + '</button>' +
     '    <button class="dc-tile-shrink" id="shrink-remote-btn" title="Shrink" aria-label="Shrink peer tile" hidden>' + ICONS.shrink + '</button>' +
     '  </div>' +
     '  <div class="dc-tile dc-tile-local" id="tile-local" hidden>' +
     '    <video id="local-video" autoplay playsinline muted></video>' +
-    '    <div class="dc-tile-label">You</div>' +
+    '    <div class="dc-tile-avatar" id="local-avatar-overlay"><div class="dc-avatar-circle" id="local-avatar-circle">?</div><div class="dc-avatar-name" id="local-avatar-name">You</div></div>' +
+    '    <div class="dc-tile-label" id="local-tile-label">You</div>' +
     '    <button class="dc-tile-expand" id="expand-local-btn" title="Expand" aria-label="Expand your tile">' + ICONS.expand + '</button>' +
     '    <button class="dc-tile-shrink" id="shrink-local-btn" title="Shrink" aria-label="Shrink your tile" hidden>' + ICONS.shrink + '</button>' +
     '  </div>' +
@@ -113,6 +121,21 @@
   var expandLocalBtn = document.getElementById('expand-local-btn');
   var shrinkRemoteBtn = document.getElementById('shrink-remote-btn');
   var shrinkLocalBtn = document.getElementById('shrink-local-btn');
+  var presenceText = document.getElementById('presence-text');
+  var presencePill = document.getElementById('presence-pill');
+  var localTileLabel = document.getElementById('local-tile-label');
+  var remoteTileLabel = document.getElementById('remote-tile-label');
+  var localAvatarCircle = document.getElementById('local-avatar-circle');
+  var remoteAvatarCircle = document.getElementById('remote-avatar-circle');
+  var localAvatarName = document.getElementById('local-avatar-name');
+  var remoteAvatarName = document.getElementById('remote-avatar-name');
+
+  // Touch detection: on touch devices there is no hover, so we force
+  // affordances (expand button etc.) to be fully visible.
+  var isTouch = (window.matchMedia && window.matchMedia('(hover: none)').matches) ||
+                (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
+                ('ontouchstart' in window);
+  if (isTouch) document.body.classList.add('is-touch');
 
   var FALLBACK_ICE = [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -156,6 +179,36 @@
   var VAD_THRESHOLD_RMS = 0.05;   // ~-26dB
   var VAD_HANG_MS = 250;          // keep ring on 250ms past last loud sample (hysteresis)
 
+  // ---------- Name + avatar identity ----------
+  var myName = (window.__USER_NAME && String(window.__USER_NAME).trim()) ||
+               (function () { try { return sessionStorage.getItem('h-calls-name'); } catch (e) { return ''; } })() ||
+               'You';
+  var peerName = 'Peer';
+  var peerCameraOn = true; // assume on until told otherwise
+
+  function initialOf(name) {
+    var n = (name || '').trim();
+    return n ? n.charAt(0).toUpperCase() : '?';
+  }
+  function colorForName(name) {
+    var h = 0;
+    var s = String(name || '');
+    for (var i = 0; i < s.length; i++) h = ((h * 31) + s.charCodeAt(i)) >>> 0;
+    return 'hsl(' + (h % 360) + ', 55%, 42%)';
+  }
+  function applyIdentity() {
+    localTileLabel.textContent = myName;
+    localAvatarCircle.textContent = initialOf(myName);
+    localAvatarCircle.style.background = colorForName(myName);
+    localAvatarName.textContent = myName;
+
+    remoteTileLabel.textContent = peerName;
+    remoteAvatarCircle.textContent = initialOf(peerName);
+    remoteAvatarCircle.style.background = colorForName(peerName);
+    remoteAvatarName.textContent = peerName;
+  }
+  applyIdentity();
+
   function log() {
     var args = Array.prototype.slice.call(arguments);
     var elapsed = ((Date.now() - t0) / 1000).toFixed(2);
@@ -188,10 +241,16 @@
     if (state === 'in-call') {
       acquireWakeLock();
       startSilentKeepalive();
+      setupMediaSession();
+      // Make sure the remote audio element is explicitly playing - helps
+      // browsers count this page as "playing audio" for background purposes.
+      try { remoteAudio.play().catch(function () {}); } catch (e) {}
+      emitMediaState();
     } else if (state === 'idle') {
       releaseWakeLock();
       stopSilentKeepalive();
       stopVoiceActivityDetection();
+      tearDownMediaSession();
       iAmCalling = false;
       resetFocus();
     }
@@ -245,6 +304,7 @@
   }
 
   async function initMedia() {
+    setStatus('Loading camera...', 'connecting');
     try {
       localStream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -256,7 +316,10 @@
       });
       localVideo.srcObject = localStream;
       hasLocalMedia = true;
-      setStatus('Ready', 'ready');
+      // Reflect the CURRENT camera track state onto the tile (in case it's
+      // disabled programmatically later) - starts on.
+      tileLocal.classList.remove('dc-cam-off');
+      setStatus('Ready to go!', 'ready');
       refreshStage();
       await populateDeviceLists();
     } catch (err) {
@@ -590,10 +653,69 @@
     cameraBtn.innerHTML = track.enabled ? ICONS.cam : ICONS.camOff;
     cameraBtn.title = track.enabled ? 'Camera off' : 'Camera on';
     tileLocal.classList.toggle('dc-cam-off', !track.enabled);
+    emitMediaState();
   });
 
+  // ---------- MediaSession API ----------
+  // Real browsers (Chrome / Safari) treat pages with an active MediaSession
+  // more leniently for background audio. This is best-effort - see notes.
+  function setupMediaSession() {
+    if (!('mediaSession' in navigator) || typeof MediaMetadata === 'undefined') return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: peerName ? 'Call with ' + peerName : 'Private call',
+        artist: myName,
+        album: 'H Calls'
+      });
+      navigator.mediaSession.playbackState = 'playing';
+      // Provide no-op handlers so the browser knows the app "owns" playback.
+      ['play', 'pause', 'stop'].forEach(function (a) {
+        try { navigator.mediaSession.setActionHandler(a, function () {}); } catch (e) {}
+      });
+      log('MediaSession registered');
+    } catch (err) { log('MediaSession setup failed', err && err.message); }
+  }
+  function tearDownMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.metadata = null;
+      navigator.mediaSession.playbackState = 'none';
+    } catch (e) {}
+  }
+
+  function emitMediaState() {
+    var vid = localStream && localStream.getVideoTracks()[0];
+    var aud = localStream && localStream.getAudioTracks()[0];
+    var state = {
+      camera: !!(vid && vid.enabled && vid.readyState === 'live'),
+      mic: !!(aud && aud.enabled && aud.readyState === 'live')
+    };
+    socket.emit('media-state', state);
+    log('-> emit media-state', JSON.stringify(state));
+  }
+
+  function refreshPresenceUI(peers) {
+    var others = peers.filter(function (p) { return p.id !== socket.id; });
+    var count = peers.length;
+    if (others.length === 0) {
+      presenceText.textContent = 'Only you online';
+      presencePill.classList.remove('dc-presence-online');
+    } else {
+      // Set peer name & avatar based on the OTHER participant.
+      peerName = others[0].name || 'Peer';
+      applyIdentity();
+      presenceText.textContent = peerName + ' online';
+      presencePill.classList.add('dc-presence-online');
+      // Refresh media-session metadata now that we know peer name
+      if (callState === 'in-call') setupMediaSession();
+    }
+  }
+
   // ---------- Signaling ----------
-  socket.on('connect', function () { log('socket connected id=', socket.id); });
+  socket.on('connect', function () {
+    log('socket connected id=', socket.id);
+    socket.emit('hello', { name: myName });
+  });
   socket.on('connect_error', function (err) { log('socket connect_error', err && err.message); });
   socket.on('disconnect', function (r) { log('socket disconnect reason=', r); });
 
@@ -658,6 +780,19 @@
   socket.on('call-end', function () { log('<- call-end'); endCall(false); });
   socket.on('peer-left', function () { log('<- peer-left'); endCall(false); setStatus('Peer left', 'error'); });
   socket.on('room-full', function () { log('<- room-full'); setStatus('Another session is already connected', 'error'); });
+
+  socket.on('presence', function (msg) {
+    var peers = (msg && Array.isArray(msg.peers)) ? msg.peers : [];
+    log('<- presence peers=', peers.map(function (p) { return p.name; }).join(', '));
+    refreshPresenceUI(peers);
+  });
+
+  socket.on('media-state', function (msg) {
+    var cameraOn = !!(msg && msg.camera);
+    peerCameraOn = cameraOn;
+    tileRemote.classList.toggle('dc-cam-off', !cameraOn);
+    log('<- media-state peerCameraOn=', cameraOn);
+  });
 
   socket.on('signal', async function (payload) {
     if (!payload) return;

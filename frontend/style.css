@@ -250,10 +250,15 @@ body {
 .dc-tile:hover .dc-tile-expand,
 .dc-tile:hover .dc-tile-shrink { opacity: 1; }
 .dc-tile-expand:hover, .dc-tile-shrink:hover { background: rgba(0,0,0,0.75); }
-@media (hover: none) {
-  /* Touch: keep affordance visible but subtle */
-  .dc-tile-expand, .dc-tile-shrink { opacity: 0.75; }
+
+/* Touch devices: always show the affordance, tap-triggered.
+   Multiple queries cover Android Chrome/Samsung/Firefox/iOS quirks where
+   any single query can misreport. body.is-touch is a JS-set fallback. */
+@media (hover: none), (pointer: coarse) {
+  .dc-tile-expand, .dc-tile-shrink { opacity: 1; }
 }
+body.is-touch .dc-tile-expand,
+body.is-touch .dc-tile-shrink { opacity: 1; }
 
 /* ---- Focus mode: one tile fills, other is PiP ---- */
 .dc-stage.dc-focus-local #tile-local,
@@ -451,3 +456,142 @@ body {
 
 /* ---- Hide raw audio elements ---- */
 #call-view audio { display: none; }
+
+/* ---- Presence pill in header ---- */
+.dc-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.dc-presence {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255,255,255,0.05);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: #b5bac1;
+  transition: background 150ms ease;
+}
+.dc-presence-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #949ba4;
+  transition: background 200ms ease, box-shadow 200ms ease;
+}
+.dc-presence.dc-presence-online .dc-presence-dot {
+  background: #23a559;
+  box-shadow: 0 0 0 3px rgba(35,165,89,0.18);
+}
+.dc-presence.dc-presence-online { color: #dbdee1; }
+
+/* ---- Camera-off avatar overlay on a tile ---- */
+.dc-tile-avatar {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: #232428;
+  z-index: 1;
+  padding: 20px;
+}
+.dc-tile.dc-cam-off .dc-tile-avatar { display: flex; }
+.dc-avatar-circle {
+  width: 96px; height: 96px;
+  border-radius: 50%;
+  background: #5865f2;
+  color: #fff;
+  font-size: 40px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: -1px;
+  user-select: none;
+}
+.dc-avatar-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #dbdee1;
+}
+/* PiP-sized tiles: shrink the avatar so it doesn't overflow */
+.dc-stage.dc-focus-local #tile-remote .dc-avatar-circle,
+.dc-stage.dc-focus-remote #tile-local .dc-avatar-circle {
+  width: 48px; height: 48px; font-size: 20px;
+}
+.dc-stage.dc-focus-local #tile-remote .dc-avatar-name,
+.dc-stage.dc-focus-remote #tile-local .dc-avatar-name {
+  display: none;
+}
+
+/* ---- Name prompt (post-unlock) ---- */
+.name-prompt {
+  position: fixed;
+  inset: 0;
+  background: #1e1f22;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  font-family: "gg sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  animation: dc-fade 200ms ease-out;
+}
+.name-prompt-card {
+  background: #2b2d31;
+  border-radius: 12px;
+  padding: 32px 28px;
+  max-width: 360px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.name-prompt-card h2 {
+  margin: 0;
+  font-size: 20px;
+  color: #dbdee1;
+  font-weight: 600;
+}
+.name-prompt-card p {
+  margin: 0;
+  color: #949ba4;
+  font-size: 13px;
+}
+.name-prompt-card input {
+  padding: 12px 14px;
+  border-radius: 6px;
+  border: 1px solid #1e1f22;
+  background: #1e1f22;
+  color: #dbdee1;
+  font-size: 14px;
+  font-family: inherit;
+}
+.name-prompt-card input:focus { outline: none; border-color: #5865f2; }
+.name-prompt-card input.name-error {
+  border-color: #f23f43;
+  animation: dc-shake 220ms ease;
+}
+.name-prompt-card button {
+  padding: 11px 14px;
+  border-radius: 6px;
+  border: none;
+  background: #5865f2;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 120ms ease;
+}
+.name-prompt-card button:hover { background: #4752c4; }
+@keyframes dc-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-4px); }
+  75% { transform: translateX(4px); }
+}

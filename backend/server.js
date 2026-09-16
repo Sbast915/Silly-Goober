@@ -24,6 +24,26 @@ const TOKEN_TTL_MS = 5 * 60 * 1000;
 // token -> { expires }
 const tokens = new Map();
 
+// socket.id -> { name }
+const presence = new Map();
+
+function sanitizeName(raw) {
+  if (typeof raw !== 'string') return 'Guest';
+  var s = raw.trim().replace(/[\r\n\t]/g, '').slice(0, 24);
+  return s || 'Guest';
+}
+
+function broadcastPresence() {
+  const roomSet = io.sockets.adapter.rooms.get(ROOM);
+  if (!roomSet) return;
+  const peers = [];
+  for (const id of roomSet) {
+    const info = presence.get(id) || {};
+    peers.push({ id, name: info.name || 'Guest' });
+  }
+  io.to(ROOM).emit('presence', { peers });
+}
+
 // crude per-IP throttle for unlock attempts
 const attempts = new Map(); // ip -> { count, lockUntil }
 const MAX_ATTEMPTS = 8;
@@ -310,6 +330,18 @@ io.on('connection', (socket) => {
   socket.join(ROOM);
   socket.to(ROOM).emit('peer-joined');
 
+  socket.on('hello', (payload) => {
+    const name = sanitizeName(payload && payload.name);
+    console.log('[sig] hello from=%s name=%s', socket.id, name);
+    presence.set(socket.id, { name });
+    broadcastPresence();
+  });
+
+  socket.on('media-state', (payload) => {
+    // Relay a peer's camera/mic on/off state (visual only, no auth in payload).
+    socket.to(ROOM).emit('media-state', payload);
+  });
+
   socket.on('signal', (payload) => {
     console.log('[sig] relay signal type=%s from=%s', payload && payload.type, socket.id);
     socket.to(ROOM).emit('signal', payload);
@@ -339,8 +371,14 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('[sig] disconnect id=%s', socket.id);
+    presence.delete(socket.id);
     socket.to(ROOM).emit('peer-left');
+    broadcastPresence();
   });
+
+  // Emit a presence snapshot to the newly-joined socket right away so it
+  // sees who's already here, even before the peer says hello again.
+  broadcastPresence();
 });
 
 server.listen(PORT, () => {

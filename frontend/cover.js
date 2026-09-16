@@ -120,10 +120,14 @@
 
   function enterRealCall(token) {
     window.__UNLOCK_TOKEN = token;
-    notesView.hidden = true;
-    callView.hidden = false;
-    loadScript('/socket.io/socket.io.js').then(function () {
-      return loadScript('call.js');
+    askForName(function (name) {
+      window.__USER_NAME = name;
+      try { sessionStorage.setItem('h-calls-name', name); } catch (e) {}
+      notesView.hidden = true;
+      callView.hidden = false;
+      loadScript('/socket.io/socket.io.js').then(function () {
+        return loadScript('call.js');
+      });
     });
   }
 
@@ -131,6 +135,39 @@
     notesView.hidden = true;
     decoyView.hidden = false;
     loadScript('decoy.js');
+  }
+
+  function askForName(callback) {
+    var saved = '';
+    try { saved = sessionStorage.getItem('h-calls-name') || ''; } catch (e) {}
+
+    var overlay = document.createElement('div');
+    overlay.className = 'name-prompt';
+    overlay.innerHTML =
+      '<div class="name-prompt-card">' +
+      '  <h2>What should we call you?</h2>' +
+      '  <p>Just for this session.</p>' +
+      '  <input id="name-input" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="Your name" />' +
+      '  <button id="name-continue" type="button">Continue</button>' +
+      '</div>';
+    document.body.appendChild(overlay);
+
+    var input = overlay.querySelector('#name-input');
+    var btn = overlay.querySelector('#name-continue');
+    if (saved) input.value = saved;
+    setTimeout(function () { input.focus(); input.select(); }, 30);
+
+    function finish() {
+      var name = (input.value || '').trim().slice(0, 24);
+      if (!name) { input.focus(); input.classList.add('name-error'); return; }
+      overlay.parentNode.removeChild(overlay);
+      callback(name);
+    }
+    btn.addEventListener('click', finish);
+    input.addEventListener('keydown', function (e) {
+      input.classList.remove('name-error');
+      if (e.key === 'Enter') { e.preventDefault(); finish(); }
+    });
   }
 
   render('');
