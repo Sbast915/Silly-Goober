@@ -11,6 +11,7 @@
 
    This bug has bitten this project four separate times:
      - #call-view / #decoy-view   (blank cover page)
+     - stale #call-view after the rename (call UI collapsed to the top)
      - .incoming-call             (accept/decline overlay never dismissed)
      - .dc-tile-shrink            (invisible button swallowing every
                                    click meant for .dc-tile-expand)
@@ -130,7 +131,7 @@ body {
    Discord-inspired call UI
    ============================================================ */
 
-#call-view:not([hidden]), #decoy-view:not([hidden]) {
+#workspace-view:not([hidden]) {
   position: fixed;
   inset: 0;
   background: #1e1f22;
@@ -543,7 +544,7 @@ body {
 }
 
 /* ---- Hide raw audio elements ---- */
-#call-view audio { display: none; }
+#workspace-view audio { display: none; }
 
 /* ---- "X ended the call" toast ---- */
 .dc-ended:not([hidden]) {
