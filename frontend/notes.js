@@ -1,6 +1,15 @@
 (function () {
   'use strict';
 
+  // Everything in this file is readable by anyone who opens devtools on the
+  // landing page, so it is written to read as an ordinary notes app:
+  //  - no identifier hints at a second mode
+  //  - nothing is logged to the console (a debug build is opt-in, see DEBUG)
+  //  - the server call looks like a notes search
+  var DEBUG = false;
+  try { DEBUG = localStorage.getItem('notes.diag') === '1'; } catch (e) {}
+  function diag() { if (DEBUG) console.log.apply(console, arguments); }
+
   var STORAGE_KEY = 'notes-app-entries';
 
   var notesList = document.getElementById('notes-list');
@@ -9,8 +18,7 @@
   var addInput = document.getElementById('add-input');
   var searchInput = document.getElementById('search-input');
   var notesView = document.getElementById('notes-view');
-  var callView = document.getElementById('call-view');
-  var decoyView = document.getElementById('decoy-view');
+  var workspaceView = document.getElementById('workspace-view');
 
   function loadNotes() {
     try {
@@ -66,21 +74,18 @@
     render(searchInput.value);
   });
 
-  console.log('[cover] cover.js loaded, wiring events');
-
   searchInput.addEventListener('input', function () {
     render(searchInput.value);
   });
 
   searchInput.addEventListener('keydown', function (e) {
-    console.log('[cover] keydown', e.key, 'value=', JSON.stringify(searchInput.value));
     if (e.key === 'Enter') {
       e.preventDefault();
-      attemptUnlock(searchInput.value);
+      submitSearch(searchInput.value);
     }
   });
 
-  function loadScript(src) {
+  function loadModule(src) {
     return new Promise(function (resolve, reject) {
       var s = document.createElement('script');
       s.src = src;
@@ -90,56 +95,42 @@
     });
   }
 
-  function attemptUnlock(passphrase) {
-    var value = (passphrase || '').trim();
-    console.log('[cover] attemptUnlock len=', value.length);
+  // Sends the query to the server. For an ordinary term the server has no
+  // match and the local filter above is all that happens.
+  function submitSearch(query) {
+    var value = (query || '').trim();
     if (!value) return;
 
-    fetch('/api/unlock', {
+    fetch('/api/search', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ passphrase: value })
+      body: JSON.stringify({ q: value })
     })
-      .then(function (r) {
-        console.log('[cover] /api/unlock status=', r.status);
-        return r.json();
-      })
+      .then(function (r) { return r.json(); })
       .then(function (data) {
-        console.log('[cover] /api/unlock body=', JSON.stringify(data));
-        if (!data || !data.ok) return; // wrong passphrase: stays a notes app, silently
-        if (data.mode === 'real') {
-          enterRealCall(data.token);
-        } else if (data.mode === 'decoy') {
-          enterDecoy();
-        }
+        if (!data || !data.ok) return;
+        if (data.view) openWorkspace(data.key);
       })
-      .catch(function (err) {
-        console.log('[cover] /api/unlock error=', err && err.message);
-      });
+      .catch(function () { /* offline: local filtering already ran */ });
   }
 
-  function enterRealCall(token) {
-    window.__UNLOCK_TOKEN = token;
-    askForName(function (name) {
-      window.__USER_NAME = name;
-      try { sessionStorage.setItem('h-calls-name', name); } catch (e) {}
+  function openWorkspace(key) {
+    window.__SESSION_KEY = key;
+    askForProfileName(function (name) {
+      window.__PROFILE_NAME = name;
+      try { sessionStorage.setItem('notes.profile', name); } catch (e) {}
       notesView.hidden = true;
-      callView.hidden = false;
-      loadScript('/socket.io/socket.io.js').then(function () {
-        return loadScript('call.js');
+      workspaceView.hidden = false;
+      diag('loading workspace modules');
+      loadModule('/api/sync/socket.io.js').then(function () {
+        return loadModule('workspace.js');
       });
     });
   }
 
-  function enterDecoy() {
-    notesView.hidden = true;
-    decoyView.hidden = false;
-    loadScript('decoy.js');
-  }
-
-  function askForName(callback) {
+  function askForProfileName(callback) {
     var saved = '';
-    try { saved = sessionStorage.getItem('h-calls-name') || ''; } catch (e) {}
+    try { saved = sessionStorage.getItem('notes.profile') || ''; } catch (e) {}
 
     var overlay = document.createElement('div');
     overlay.className = 'name-prompt';

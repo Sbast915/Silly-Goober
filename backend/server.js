@@ -9,11 +9,10 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, { path: '/api/sync' });
 
 const PORT = process.env.PORT || 3000;
 const REAL_PASS_HASH = process.env.REAL_PASS_HASH || '';
-const DECOY_PASS_HASH = process.env.DECOY_PASS_HASH || '';
 // --- Self-hosted coturn ---
 const TURN_SECRET = process.env.TURN_SECRET || '';
 const TURN_HOST = process.env.TURN_HOST || '141.148.243.201';
@@ -90,30 +89,28 @@ app.use(express.static(path.join(__dirname, '..', 'frontend')));
 
 app.get('/health', (req, res) => res.status(200).send('ok'));
 
-app.post('/api/unlock', (req, res) => {
+app.post('/api/search', (req, res) => {
   const ip = req.ip || 'unknown';
   const now = Date.now();
   const rec = attempts.get(ip) || { count: 0, lockUntil: 0 };
 
-  console.log('[unlock] hit ip=%s hasRealHash=%s hasDecoyHash=%s bodyType=%s',
-    ip, !!REAL_PASS_HASH, !!DECOY_PASS_HASH, typeof (req.body && req.body.passphrase));
+  console.log('[search] hit ip=%s hasRealHash=%s', ip, !!REAL_PASS_HASH);
 
   if (rec.lockUntil > now) {
-    console.log('[unlock] locked out ip=%s', ip);
+    console.log('[search] throttled ip=%s', ip);
     return res.status(429).json({ ok: false });
   }
 
-  const { passphrase } = req.body || {};
+  const passphrase = (req.body && req.body.q) || '';
   if (typeof passphrase !== 'string' || !passphrase) {
-    console.log('[unlock] bad body ip=%s', ip);
+    console.log('[search] bad body ip=%s', ip);
     return res.status(400).json({ ok: false });
   }
 
   const isReal = REAL_PASS_HASH && bcrypt.compareSync(passphrase, REAL_PASS_HASH);
-  const isDecoy = !isReal && DECOY_PASS_HASH && bcrypt.compareSync(passphrase, DECOY_PASS_HASH);
-  console.log('[unlock] result ip=%s isReal=%s isDecoy=%s', ip, isReal, isDecoy);
+  console.log('[search] result ip=%s match=%s', ip, isReal);
 
-  if (!isReal && !isDecoy) {
+  if (!isReal) {
     rec.count += 1;
     if (rec.count >= MAX_ATTEMPTS) {
       rec.lockUntil = now + LOCK_MS;
@@ -126,14 +123,9 @@ app.post('/api/unlock', (req, res) => {
 
   attempts.delete(ip);
 
-  if (isDecoy) {
-    // Decoy mode never touches real signaling, so it needs no token.
-    return res.json({ ok: true, mode: 'decoy' });
-  }
-
   const token = crypto.randomBytes(24).toString('hex');
   tokens.set(token, { expires: now + TOKEN_TTL_MS });
-  return res.json({ ok: true, mode: 'real', token });
+  return res.json({ ok: true, view: 'workspace', key: token });
 });
 
 function tokenFromReq(req) {
@@ -180,7 +172,7 @@ function getIceServers(logPrefix, label) {
 }
 
 
-app.post('/api/ice-config', (req, res) => {
+app.post('/api/session', (req, res) => {
   const token = tokenFromReq(req);
   const rec = token && tokens.get(token);
   if (!rec || rec.expires < Date.now()) {
@@ -293,9 +285,8 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, () => {
   console.log('listening on ' + PORT);
-  console.log('[startup] env presence: REAL_PASS_HASH=%s DECOY_PASS_HASH=%s TURN_SECRET=%s TURN_HOST=%s:%d realm=%s tls=%s',
+  console.log('[startup] env presence: REAL_PASS_HASH=%s TURN_SECRET=%s TURN_HOST=%s:%d realm=%s tls=%s',
     REAL_PASS_HASH ? '(set len=' + REAL_PASS_HASH.length + ')' : '(UNSET)',
-    DECOY_PASS_HASH ? '(set len=' + DECOY_PASS_HASH.length + ')' : '(UNSET)',
     TURN_SECRET ? '(set len=' + TURN_SECRET.length + ')' : '(UNSET)',
     TURN_HOST, TURN_PORT, TURN_REALM, TURN_TLS_ENABLED
   );

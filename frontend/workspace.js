@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var callView = document.getElementById('call-view');
+  var callView = document.getElementById('workspace-view');
 
   // Inline SVG icon set (mic on/off, cam on/off, hangup, settings, phone-in)
   var ICONS = {
@@ -177,7 +177,7 @@
   ];
   var iceServers = FALLBACK_ICE;
 
-  var socket = io({ auth: { token: window.__UNLOCK_TOKEN } });
+  var socket = io({ path: '/api/sync', auth: { token: window.__SESSION_KEY } });
   var localStream = null;
   var pc = null;
   var pendingCandidates = [];
@@ -204,8 +204,8 @@
   var VAD_HANG_MS = 250;          // keep ring on 250ms past last loud sample (hysteresis)
 
   // ---------- Name + avatar identity ----------
-  var myName = (window.__USER_NAME && String(window.__USER_NAME).trim()) ||
-               (function () { try { return sessionStorage.getItem('h-calls-name'); } catch (e) { return ''; } })() ||
+  var myName = (window.__PROFILE_NAME && String(window.__PROFILE_NAME).trim()) ||
+               (function () { try { return sessionStorage.getItem('notes.profile'); } catch (e) { return ''; } })() ||
                'You';
   var peerName = 'Peer';
 
@@ -242,10 +242,14 @@
   // ---------- Role (participant vs observer) ----------
   var myRole = 'participant'; // updated when server sends 'role-assigned'
 
+  // Silent unless explicitly enabled: localStorage.setItem('notes.diag','1')
+  var DEBUG = false;
+  try { DEBUG = localStorage.getItem('notes.diag') === '1'; } catch (e) {}
   function log() {
+    if (!DEBUG) return;
     var args = Array.prototype.slice.call(arguments);
     var elapsed = ((Date.now() - t0) / 1000).toFixed(2);
-    args.unshift('[call ' + role + ' t+' + elapsed + 's]');
+    args.unshift('[' + role + ' t+' + elapsed + 's]');
     console.log.apply(console, args);
   }
 
@@ -326,11 +330,11 @@
 
   async function fetchIceConfig() {
     try {
-      var r = await fetch('/api/ice-config', {
+      var r = await fetch('/api/session', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + (window.__UNLOCK_TOKEN || '')
+          'Authorization': 'Bearer ' + (window.__SESSION_KEY || '')
         },
         body: '{}'
       });
@@ -696,12 +700,12 @@
     // 3) Disconnect socket so we don't stay in presence
     try { socket.disconnect(); } catch (e) {}
     // 4) Hide call view, show cover
-    var callViewEl = document.getElementById('call-view');
+    var callViewEl = document.getElementById('workspace-view');
     var notesViewEl = document.getElementById('notes-view');
     if (callViewEl) callViewEl.hidden = true;
     if (notesViewEl) notesViewEl.hidden = false;
     // Clear the unlock token so a re-entry requires the passphrase again
-    try { delete window.__UNLOCK_TOKEN; } catch (e) { window.__UNLOCK_TOKEN = undefined; }
+    try { delete window.__SESSION_KEY; } catch (e) { window.__SESSION_KEY = undefined; }
   });
 
   acceptBtn.addEventListener('click', async function () {
@@ -1095,7 +1099,7 @@
   wireFocusBtn(shrinkRemoteBtn, 'none', 'shrink-remote');
 
   // ---------- Video fit mode (cover / contain / fill) ----------
-  var FIT_KEY = 'h-calls-video-fit';
+  var FIT_KEY = 'notes.view.fit';
   function applyFitMode(mode) {
     var valid = (mode === 'cover' || mode === 'contain' || mode === 'fill') ? mode : 'cover';
     // Applied to BOTH tiles so local and remote stay consistent.
