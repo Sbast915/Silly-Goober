@@ -13,7 +13,8 @@
     call: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z"/></svg>',
     settings: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>',
     expand: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
-    shrink: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>'
+    shrink: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>',
+    leave: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>'
   };
 
   callView.innerHTML =
@@ -30,6 +31,7 @@
     '      <span class="dc-presence-text" id="presence-text">1 online</span>' +
     '    </div>' +
     '    <button class="dc-icon-btn" id="settings-btn" title="Devices">' + ICONS.settings + '</button>' +
+    '    <button class="dc-icon-btn dc-icon-btn-leave" id="leave-btn" title="Leave call room" aria-label="Leave call room">' + ICONS.leave + '</button>' +
     '  </div>' +
     '</div>' +
 
@@ -87,8 +89,9 @@
 
     '<div class="dc-incoming" id="incoming-call" hidden>' +
     '  <div class="dc-incoming-card">' +
-    '    <div class="dc-incoming-avatar">P</div>' +
-    '    <div class="dc-incoming-name">Incoming call</div>' +
+    '    <div class="dc-incoming-avatar" id="incoming-avatar">?</div>' +
+    '    <div class="dc-incoming-name" id="incoming-name">Incoming call</div>' +
+    '    <div class="dc-incoming-sub" id="incoming-sub"></div>' +
     '    <div class="dc-incoming-actions">' +
     '      <button class="dc-ctrl-btn dc-ctrl-danger" id="decline-btn" title="Decline">' + ICONS.hangup + '</button>' +
     '      <button class="dc-ctrl-btn dc-ctrl-accept" id="accept-btn" title="Accept">' + ICONS.call + '</button>' +
@@ -133,6 +136,10 @@
   var remoteAvatarCircle = document.getElementById('remote-avatar-circle');
   var presenceList = document.getElementById('presence-list');
   var presenceListItems = document.getElementById('presence-list-items');
+  var incomingAvatar = document.getElementById('incoming-avatar');
+  var incomingName = document.getElementById('incoming-name');
+  var incomingSub = document.getElementById('incoming-sub');
+  var leaveBtn = document.getElementById('leave-btn');
 
   // Touch detection: on touch devices there is no hover, so we force
   // affordances (expand button etc.) to be fully visible.
@@ -208,6 +215,15 @@
     remoteTileLabel.textContent = peerName;
     remoteAvatarCircle.textContent = initialOf(peerName);
     remoteAvatarCircle.style.background = colorForName(peerName);
+
+    // Also refresh the incoming-call card with the peer's real identity so
+    // it never shows a generic "P" or "Incoming call" placeholder.
+    if (incomingAvatar) {
+      incomingAvatar.textContent = initialOf(peerName);
+      incomingAvatar.style.background = colorForName(peerName);
+    }
+    if (incomingName) incomingName.textContent = peerName + ' is calling';
+    if (incomingSub) incomingSub.textContent = 'Tap to answer';
   }
   applyIdentity();
 
@@ -268,14 +284,21 @@
     var showPresenceList = (callState === 'idle');
     if (presenceList) presenceList.hidden = !showPresenceList;
 
+    // The moment a real peer stream is present, no incoming/waiting/loading
+    // text should show. This is the "hide status once connected" guarantee.
+    if (hasRemoteMedia) {
+      stageEmpty.hidden = true;
+      return;
+    }
+
     if (!hasLocalMedia && !hasRemoteMedia && callState === 'idle') {
-      // stage-empty covers early "loading camera" only when there's no other content
       stageEmpty.hidden = !!(presenceList && !presenceList.hidden);
       emptyTitle.textContent = 'Getting camera ready...';
       emptySub.textContent = '';
     } else if (hasLocalMedia && !hasRemoteMedia && callState !== 'idle') {
       stageEmpty.hidden = false;
-      emptyTitle.textContent = callState === 'calling' ? 'Calling...' : 'Waiting for peer...';
+      var whom = (peerName && peerName !== 'Peer') ? peerName : 'peer';
+      emptyTitle.textContent = callState === 'calling' ? ('Calling ' + whom + '...') : ('Waiting for ' + whom + '...');
       emptySub.textContent = '';
     } else {
       stageEmpty.hidden = true;
@@ -595,7 +618,8 @@
     iAmCalling = true;
     log('startCall clicked, becoming CALLER, sending call-request');
     setCallState('calling');
-    setStatus('Calling...', 'connecting');
+    var whom = (peerName && peerName !== 'Peer') ? peerName : 'peer';
+    setStatus('Calling ' + whom + '...', 'connecting');
     socket.emit('call-request');
   }
 
@@ -618,6 +642,30 @@
   callBtn.addEventListener('click', startCall);
   endBtn.addEventListener('click', function () { endCall(true); });
   settingsBtn.addEventListener('click', function () { settingsPanel.hidden = !settingsPanel.hidden; });
+
+  leaveBtn.addEventListener('click', function () {
+    log('LEAVE button clicked - returning to cover');
+    // 1) End any active call cleanly first
+    if (callState === 'in-call' || callState === 'calling' || callState === 'ringing') {
+      endCall(true);
+    }
+    // 2) Release local media so the browser tab drops the camera indicator
+    if (localStream) {
+      try { localStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+      localStream = null;
+      hasLocalMedia = false;
+    }
+    if (localVideo) localVideo.srcObject = null;
+    // 3) Disconnect socket so we don't stay in presence
+    try { socket.disconnect(); } catch (e) {}
+    // 4) Hide call view, show cover
+    var callViewEl = document.getElementById('call-view');
+    var notesViewEl = document.getElementById('notes-view');
+    if (callViewEl) callViewEl.hidden = true;
+    if (notesViewEl) notesViewEl.hidden = false;
+    // Clear the unlock token so a re-entry requires the passphrase again
+    try { delete window.__UNLOCK_TOKEN; } catch (e) { window.__UNLOCK_TOKEN = undefined; }
+  });
 
   acceptBtn.addEventListener('click', async function () {
     t0 = Date.now();
@@ -769,9 +817,6 @@
     if (callState === 'in-call') { log('ignoring call-request, already in-call'); return; }
 
     if (callState === 'calling') {
-      // GLARE: both peers clicked Call within the same window.
-      // Deterministic tie-break: lexicographically SMALLER socket.id wins as caller.
-      // Both peers do the same comparison on the same pair of ids, so they reach the same conclusion.
       log('GLARE detected. tie-break: myId < fromId ->', (myId && fromId) ? (myId < fromId) : '(missing id)');
       if (myId && fromId && myId < fromId) {
         log('GLARE: I win as caller, ignoring peer request; peer should transition to callee');
@@ -780,17 +825,18 @@
       log('GLARE: I lose, cancelling my caller state and transitioning to callee/ringing');
       role = 'callee';
       iAmCalling = false;
+      applyIdentity(); // refresh incoming card in case peerName just became known
       setCallState('ringing');
-      setStatus('Incoming call', 'connecting');
+      setStatus(peerName + ' is calling', 'connecting');
       return;
     }
 
     if (callState === 'ringing') { log('ignoring duplicate call-request while already ringing'); return; }
 
-    // idle -> normal incoming call
     role = 'callee';
+    applyIdentity();
     setCallState('ringing');
-    setStatus('Incoming call', 'connecting');
+    setStatus(peerName + ' is calling', 'connecting');
   });
 
   socket.on('call-accept', async function () {

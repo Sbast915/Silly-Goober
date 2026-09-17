@@ -159,6 +159,7 @@ body {
   transition: background 120ms ease, color 120ms ease;
 }
 .dc-icon-btn:hover { background: rgba(255,255,255,0.08); color: #fff; }
+.dc-icon-btn-leave:hover { background: rgba(242,63,67,0.18); color: #f23f43; }
 
 /* ---- Stage / video tiles ---- */
 .dc-stage {
@@ -236,7 +237,16 @@ body {
    fragile - some touchscreens misreport (hover: hover), some browsers do
    not always fire the hover state on a first tap, etc. Always-on is the
    only reliable behaviour and is what Discord and most call apps do. */
-.dc-tile-expand, .dc-tile-shrink {
+/* Root-cause note: BOTH .dc-tile-expand and .dc-tile-shrink are pinned to
+   top:10px right:10px with the same 34x34 footprint and z-index 3. Only
+   one is meant to be visible at a time (JS toggles the `hidden` attribute
+   on the other). But `.dc-tile-shrink { display: flex }` has the same CSS
+   specificity as the browser default `[hidden] { display: none }` and my
+   rule comes later - so `display: flex` won even when the button had
+   `hidden`. Result: the always-drawn shrink button sat on top of the
+   expand button and swallowed every real click. Fix: scope both selectors
+   with :not([hidden]) so a hidden button truly gets display:none. */
+.dc-tile-expand:not([hidden]), .dc-tile-shrink:not([hidden]) {
   position: absolute;
   top: 10px;
   right: 10px;
@@ -442,10 +452,17 @@ body {
   50%       { box-shadow: 0 0 0 16px rgba(88,101,242,0); }
 }
 .dc-incoming-name {
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 600;
   color: #fff;
+  text-align: center;
 }
+.dc-incoming-sub {
+  font-size: 13px;
+  color: #949ba4;
+  margin-top: -8px;
+}
+.dc-incoming-sub:empty { display: none; }
 .dc-incoming-actions {
   display: flex;
   gap: 24px;
