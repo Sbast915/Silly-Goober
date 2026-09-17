@@ -19,7 +19,6 @@
 
   callView.innerHTML =
     '<audio id="remote-audio" autoplay playsinline></audio>' +
-    '<audio id="silent-keepalive" loop></audio>' +
     '<div class="dc-header">' +
     '  <div class="dc-channel">' +
     '    <span class="dc-channel-hash">#</span>' +
@@ -38,7 +37,6 @@
     '<div class="dc-stage" id="stage">' +
     '  <div class="dc-empty-state" id="stage-empty">' +
     '    <div class="dc-empty-title" id="empty-title">Getting camera ready...</div>' +
-    '    <div class="dc-empty-sub" id="empty-sub"></div>' +
     '  </div>' +
     '  <div class="dc-presence-list" id="presence-list" hidden>' +
     '    <div class="dc-presence-list-title">Who’s here</div>' +
@@ -78,6 +76,14 @@
     '    <label for="speaker-select">Speaker</label>' +
     '    <select id="speaker-select"></select>' +
     '  </div>' +
+    '  <div class="dc-setting-row">' +
+    '    <label for="fit-select">Video fit</label>' +
+    '    <select id="fit-select">' +
+    '      <option value="cover">Fill tile (crop edges)</option>' +
+    '      <option value="contain">Fit entire video (black bars)</option>' +
+    '      <option value="fill">Stretch to tile (distorts)</option>' +
+    '    </select>' +
+    '  </div>' +
     '</div>' +
 
     '<div class="dc-controls">' +
@@ -87,6 +93,12 @@
     '  <button class="dc-ctrl-btn dc-ctrl-danger" id="end-btn" title="Hang up" hidden>' + ICONS.hangup + '</button>' +
     '</div>' +
 
+    '<div class="dc-ended" id="call-ended-toast" hidden>' +
+    '  <div class="dc-ended-card">' +
+    '    <div class="dc-ended-avatar" id="ended-avatar">?</div>' +
+    '    <div class="dc-ended-text" id="ended-text">Call ended</div>' +
+    '  </div>' +
+    '</div>' +
     '<div class="dc-incoming" id="incoming-call" hidden>' +
     '  <div class="dc-incoming-card">' +
     '    <div class="dc-incoming-avatar" id="incoming-avatar">?</div>' +
@@ -119,11 +131,13 @@
   var settingsPanel = document.getElementById('settings-panel');
   var tileLocal = document.getElementById('tile-local');
   var tileRemote = document.getElementById('tile-remote');
-  var silentAudio = document.getElementById('silent-keepalive');
+  var fitSelect = document.getElementById('fit-select');
+  var endedToast = document.getElementById('call-ended-toast');
+  var endedAvatar = document.getElementById('ended-avatar');
+  var endedText = document.getElementById('ended-text');
   var stageEl = document.getElementById('stage');
   var stageEmpty = document.getElementById('stage-empty');
   var emptyTitle = document.getElementById('empty-title');
-  var emptySub = document.getElementById('empty-sub');
   var expandRemoteBtn = document.getElementById('expand-remote-btn');
   var expandLocalBtn = document.getElementById('expand-local-btn');
   var shrinkRemoteBtn = document.getElementById('shrink-remote-btn');
@@ -169,7 +183,6 @@
   var pendingCandidates = [];
   var callState = 'idle';           // idle | calling | ringing | in-call
   var role = 'none';                // 'caller' | 'callee' | 'none'
-  var iAmCalling = false;           // true after we emit call-request, until state leaves 'calling'
   var t0 = Date.now();
   var localCandCount = 0;
   var remoteCandCount = 0;
@@ -195,7 +208,6 @@
                (function () { try { return sessionStorage.getItem('h-calls-name'); } catch (e) { return ''; } })() ||
                'You';
   var peerName = 'Peer';
-  var peerCameraOn = true; // assume on until told otherwise
 
   function initialOf(name) {
     var n = (name || '').trim();
@@ -272,7 +284,6 @@
       stopSilentKeepalive();
       stopVoiceActivityDetection();
       tearDownMediaSession();
-      iAmCalling = false;
       resetFocus();
     }
   }
@@ -294,12 +305,10 @@
     if (!hasLocalMedia && !hasRemoteMedia && callState === 'idle') {
       stageEmpty.hidden = !!(presenceList && !presenceList.hidden);
       emptyTitle.textContent = 'Getting camera ready...';
-      emptySub.textContent = '';
     } else if (hasLocalMedia && !hasRemoteMedia && callState !== 'idle') {
       stageEmpty.hidden = false;
       var whom = (peerName && peerName !== 'Peer') ? peerName : 'peer';
       emptyTitle.textContent = callState === 'calling' ? ('Calling ' + whom + '...') : ('Waiting for ' + whom + '...');
-      emptySub.textContent = '';
     } else {
       stageEmpty.hidden = true;
     }
@@ -307,6 +316,7 @@
 
   function resetFocus() {
     focusMode = 'none';
+    resetPipPosition();
     stageEl.classList.remove('dc-focus-local', 'dc-focus-remote');
     expandLocalBtn.hidden = false;
     expandRemoteBtn.hidden = false;
@@ -347,6 +357,13 @@
         video: true
       });
       localVideo.srcObject = localStream;
+      // Mobile Safari/Chrome often will not start the preview from the
+      // autoplay attribute alone even with muted+playsinline. Calling
+      // play() explicitly (inside the user-gesture-descended async chain)
+      // is what actually makes the local preview appear on a phone.
+      try { await localVideo.play(); } catch (playErr) {
+        log('localVideo.play() rejected:', playErr && playErr.name, playErr && playErr.message);
+      }
       hasLocalMedia = true;
       // Reflect the CURRENT camera track state onto the tile (in case it's
       // disabled programmatically later) - starts on.
@@ -615,7 +632,6 @@
     if (!localStream) await initMedia();
     t0 = Date.now();
     role = 'caller';
-    iAmCalling = true;
     log('startCall clicked, becoming CALLER, sending call-request');
     setCallState('calling');
     var whom = (peerName && peerName !== 'Peer') ? peerName : 'peer';
@@ -623,7 +639,25 @@
     socket.emit('call-request');
   }
 
-  async function endCall(notifyPeer) {
+  // Briefly show who ended the call before dropping back to the menu.
+  var endedToastTimer = 0;
+  function showEndedToast(whoName, isSelf) {
+    if (!endedToast) return;
+    var label = isSelf ? 'You ended the call' : (whoName + ' ended the call');
+    endedAvatar.textContent = initialOf(isSelf ? myName : whoName);
+    endedAvatar.style.background = colorForName(isSelf ? myName : whoName);
+    endedText.textContent = label;
+    endedToast.hidden = false;
+    log('ended toast:', label);
+    if (endedToastTimer) clearTimeout(endedToastTimer);
+    endedToastTimer = setTimeout(function () {
+      endedToast.hidden = true;
+      endedToastTimer = 0;
+    }, 2200);
+  }
+
+  // endedBy: omit for silent teardown, or pass { name, isSelf } to show the toast.
+  async function endCall(notifyPeer, endedBy) {
     if (notifyPeer) socket.emit('call-end');
     if (pc) { try { pc.close(); } catch (e) {} pc = null; }
     remoteVideo.srcObject = null;
@@ -631,16 +665,19 @@
     hasRemoteMedia = false;
     pendingCandidates = [];
     role = 'none';
-    iAmCalling = false;
     tileRemote.classList.remove('dc-speaking');
     tileLocal.classList.remove('dc-speaking');
     stopVoiceActivityDetection();
     setCallState('idle');
     setStatus('Ready', 'ready');
+    if (endedBy) showEndedToast(endedBy.name, endedBy.isSelf);
   }
 
   callBtn.addEventListener('click', startCall);
-  endBtn.addEventListener('click', function () { endCall(true); });
+  endBtn.addEventListener('click', function () {
+    var wasConnected = (callState === 'in-call');
+    endCall(true, wasConnected ? { name: myName, isSelf: true } : null);
+  });
   settingsBtn.addEventListener('click', function () { settingsPanel.hidden = !settingsPanel.hidden; });
 
   leaveBtn.addEventListener('click', function () {
@@ -824,7 +861,6 @@
       }
       log('GLARE: I lose, cancelling my caller state and transitioning to callee/ringing');
       role = 'callee';
-      iAmCalling = false;
       applyIdentity(); // refresh incoming card in case peerName just became known
       setCallState('ringing');
       setStatus(peerName + ' is calling', 'connecting');
@@ -865,8 +901,21 @@
     setStatus('Call declined', 'error');
   });
 
-  socket.on('call-end', function () { log('<- call-end'); endCall(false); });
-  socket.on('peer-left', function () { log('<- peer-left'); endCall(false); setStatus('Peer left', 'error'); });
+  socket.on('call-end', function (msg) {
+    var who = (msg && msg.fromName) || peerName || 'Peer';
+    log('<- call-end from', who);
+    endCall(false, { name: who, isSelf: false });
+  });
+
+  socket.on('peer-left', function (msg) {
+    // Prefer the server-supplied name (captured before presence was cleared),
+    // fall back to the last known peerName rather than a generic label.
+    var who = (msg && msg.fromName) || peerName || 'Peer';
+    log('<- peer-left', who);
+    var wasConnected = (callState === 'in-call');
+    endCall(false, wasConnected ? { name: who, isSelf: false } : null);
+    setStatus(who + ' left the call', 'error');
+  });
   socket.on('room-full', function () { log('<- room-full'); setStatus('Another session is already connected', 'error'); });
 
   socket.on('presence', function (msg) {
@@ -891,9 +940,8 @@
 
   socket.on('media-state', function (msg) {
     var cameraOn = !!(msg && msg.camera);
-    peerCameraOn = cameraOn;
     tileRemote.classList.toggle('dc-cam-off', !cameraOn);
-    log('<- media-state peerCameraOn=', cameraOn);
+    log('<- media-state peer camera on =', cameraOn);
   });
 
   socket.on('signal', async function (payload) {
@@ -1013,6 +1061,9 @@
   // ---------- Focus mode (expand tile, other becomes PiP) ----------
   function setFocus(mode) {
     focusMode = mode;
+    // Clear any dragged PiP offset so the new small tile starts at its
+    // CSS-anchored corner instead of inheriting the previous tile's position.
+    resetPipPosition();
     stageEl.classList.toggle('dc-focus-local', mode === 'local');
     stageEl.classList.toggle('dc-focus-remote', mode === 'remote');
     expandLocalBtn.hidden = (mode === 'local');
@@ -1042,6 +1093,129 @@
   wireFocusBtn(expandRemoteBtn, 'remote', 'expand-remote');
   wireFocusBtn(shrinkLocalBtn, 'none', 'shrink-local');
   wireFocusBtn(shrinkRemoteBtn, 'none', 'shrink-remote');
+
+  // ---------- Video fit mode (cover / contain / fill) ----------
+  var FIT_KEY = 'h-calls-video-fit';
+  function applyFitMode(mode) {
+    var valid = (mode === 'cover' || mode === 'contain' || mode === 'fill') ? mode : 'cover';
+    // Applied to BOTH tiles so local and remote stay consistent.
+    localVideo.style.objectFit = valid;
+    remoteVideo.style.objectFit = valid;
+    // 'contain' letterboxes, so the black bars should read as intentional.
+    tileLocal.classList.toggle('dc-fit-contain', valid === 'contain');
+    tileRemote.classList.toggle('dc-fit-contain', valid === 'contain');
+    log('video fit ->', valid);
+  }
+  (function initFitMode() {
+    var saved = 'cover';
+    try { saved = localStorage.getItem(FIT_KEY) || 'cover'; } catch (e) {}
+    fitSelect.value = saved;
+    applyFitMode(saved);
+  })();
+  fitSelect.addEventListener('change', function () {
+    var v = fitSelect.value;
+    try { localStorage.setItem(FIT_KEY, v); } catch (e) {}
+    applyFitMode(v);
+  });
+
+  // ---------- Draggable picture-in-picture tile ----------
+  // Pointer Events cover mouse + touch + pen in one code path, so we do not
+  // need separate mousedown/touchstart handling.
+  var pipDrag = { active: false, id: null, startX: 0, startY: 0, originX: 0, originY: 0, el: null };
+
+  function pipTile() {
+    // Whichever tile is currently the small one (the non-focused tile).
+    if (focusMode === 'local') return tileRemote;
+    if (focusMode === 'remote') return tileLocal;
+    return null;
+  }
+
+  function clampPipIntoView(el, x, y) {
+    // The PiP is position:absolute inside .dc-stage (position:relative), so
+    // left/top are measured against the stage's padding box. clientWidth/
+    // clientHeight are exactly that box, and offsetWidth/offsetHeight are
+    // the element's unscaled layout size - keeping both in the same
+    // coordinate space is what makes the clamp exact.
+    var maxX = stageEl.clientWidth - el.offsetWidth;
+    var maxY = stageEl.clientHeight - el.offsetHeight;
+    return {
+      x: Math.max(0, Math.min(x, Math.max(0, maxX))),
+      y: Math.max(0, Math.min(y, Math.max(0, maxY)))
+    };
+  }
+
+  function setPipPosition(el, x, y) {
+    var p = clampPipIntoView(el, x, y);
+    // Switch from the CSS bottom/right anchoring to explicit left/top.
+    el.style.left = p.x + 'px';
+    el.style.top = p.y + 'px';
+    el.style.right = 'auto';
+    el.style.bottom = 'auto';
+  }
+
+  function resetPipPosition() {
+    [tileLocal, tileRemote].forEach(function (el) {
+      el.style.left = '';
+      el.style.top = '';
+      el.style.right = '';
+      el.style.bottom = '';
+      el.classList.remove('dc-pip-dragging');
+    });
+  }
+
+  function onPipPointerDown(e) {
+    var el = pipTile();
+    if (!el) return;
+    // Only start a drag when the press actually lands on the small tile,
+    // and never when it lands on its expand/shrink button.
+    if (!el.contains(e.target)) return;
+    if (e.target.closest && e.target.closest('.dc-tile-expand, .dc-tile-shrink')) return;
+
+    pipDrag.active = true;
+    pipDrag.id = e.pointerId;
+    pipDrag.el = el;
+    pipDrag.startX = e.clientX;
+    pipDrag.startY = e.clientY;
+    // offsetLeft/offsetTop are relative to the stage (the offsetParent),
+    // matching the coordinate space clampPipIntoView works in.
+    pipDrag.originX = el.offsetLeft;
+    pipDrag.originY = el.offsetTop;
+    el.classList.add('dc-pip-dragging');
+    try { el.setPointerCapture(e.pointerId); } catch (err) {}
+    log('PiP drag start at', pipDrag.originX, pipDrag.originY);
+  }
+
+  function onPipPointerMove(e) {
+    if (!pipDrag.active || e.pointerId !== pipDrag.id || !pipDrag.el) return;
+    e.preventDefault();
+    var dx = e.clientX - pipDrag.startX;
+    var dy = e.clientY - pipDrag.startY;
+    setPipPosition(pipDrag.el, pipDrag.originX + dx, pipDrag.originY + dy);
+  }
+
+  function onPipPointerUp(e) {
+    if (!pipDrag.active || e.pointerId !== pipDrag.id) return;
+    if (pipDrag.el) {
+      pipDrag.el.classList.remove('dc-pip-dragging');
+      try { pipDrag.el.releasePointerCapture(e.pointerId); } catch (err) {}
+    }
+    log('PiP drag end');
+    pipDrag.active = false;
+    pipDrag.id = null;
+    pipDrag.el = null;
+  }
+
+  stageEl.addEventListener('pointerdown', onPipPointerDown);
+  stageEl.addEventListener('pointermove', onPipPointerMove, { passive: false });
+  stageEl.addEventListener('pointerup', onPipPointerUp);
+  stageEl.addEventListener('pointercancel', onPipPointerUp);
+
+  // Keep the PiP on-screen if the window/stage is resized mid-call.
+  window.addEventListener('resize', function () {
+    var el = pipTile();
+    if (!el || !el.style.left) return;
+    setPipPosition(el, el.offsetLeft, el.offsetTop);
+  });
 
   setCallState('idle');
   initMedia();

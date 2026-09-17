@@ -332,11 +332,6 @@ io.use((socket, next) => {
   next();
 });
 
-function roomSize() {
-  const room = io.sockets.adapter.rooms.get(ROOM);
-  return room ? room.size : 0;
-}
-
 function assertParticipant(socket) {
   return callParticipants.has(socket.id);
 }
@@ -390,18 +385,24 @@ io.on('connection', (socket) => {
 
   socket.on('call-end', () => {
     if (!assertParticipant(socket)) return;
-    console.log('[sig] relay call-end from=%s', socket.id);
-    socket.to(ROOM).emit('call-end');
+    const info = presence.get(socket.id) || {};
+    console.log('[sig] relay call-end from=%s name=%s', socket.id, info.name);
+    // Carry the ender's name so the remaining peer can say who hung up.
+    socket.to(ROOM).emit('call-end', { fromName: info.name || 'Peer' });
   });
 
   socket.on('disconnect', () => {
     const wasParticipant = callParticipants.has(socket.id);
-    console.log('[sig] disconnect id=%s wasParticipant=%s', socket.id, wasParticipant);
+    // Capture the name BEFORE deleting from presence, so the remaining
+    // peer can be told who actually left rather than a generic "Peer".
+    const leaverInfo = presence.get(socket.id) || {};
+    const leaverName = leaverInfo.name || 'Peer';
+    console.log('[sig] disconnect id=%s name=%s wasParticipant=%s', socket.id, leaverName, wasParticipant);
     callParticipants.delete(socket.id);
     presence.delete(socket.id);
     // Only notify peer-left to the *other* participant (avoids peer-left
     // storms into the room from observer disconnects).
-    if (wasParticipant) socket.to(ROOM).emit('peer-left');
+    if (wasParticipant) socket.to(ROOM).emit('peer-left', { fromName: leaverName });
     // Auto-promote any waiting observer into the freed slot.
     if (wasParticipant) tryPromoteObserver();
     broadcastPresence();
