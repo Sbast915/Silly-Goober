@@ -27,6 +27,8 @@ const TURN_TLS_ENABLED = process.env.TURN_TLS === '1';
 
 const { buildIceServers, makeTurnCredentials } = require('./turn');
 const { runTurnSelfTest } = require('./turn-selftest');
+const chat = require('./chat');
+const CHAT_ENABLED = !!process.env.CHAT_API_SECRET;
 
 const ROOM = 'call';
 const TOKEN_TTL_MS = 5 * 60 * 1000;
@@ -191,6 +193,72 @@ app.post('/api/session', (req, res) => {
   });
 });
 
+// --- Chat (history + media proxied through here) ---------------------------
+// The browser never talks to the VM directly: we re-check the caller's own
+// session token, then use CHAT_API_SECRET on their behalf. That keeps the
+// shared secret server-side and means media URLs need no credentials.
+
+function requireSession(req, res) {
+  const token = tokenFromReq(req);
+  const rec = token && tokens.get(token);
+  if (!rec || rec.expires < Date.now()) {
+    res.status(401).json({ ok: false });
+    return null;
+  }
+  return rec;
+}
+
+app.post('/api/history', async (req, res) => {
+  if (!requireSession(req, res)) return;
+  if (!CHAT_ENABLED) return res.json({ ok: true, messages: [], disabled: true });
+  try {
+    const data = await chat.getHistory(500);
+    res.json({ ok: true, messages: data.messages || [] });
+  } catch (err) {
+    console.log('[chat] history failed: %s', err && err.message);
+    res.status(502).json({ ok: false, error: 'history unavailable' });
+  }
+});
+
+// Media proxy. Token comes as a query param because <img>/<audio> cannot
+// send an Authorization header.
+app.get('/api/media/:id', async (req, res) => {
+  const token = req.query.k || '';
+  const rec = token && tokens.get(token);
+  if (!rec || rec.expires < Date.now()) return res.status(401).end();
+  if (!CHAT_ENABLED) return res.status(404).end();
+  try {
+    const out = await chat.fetchMedia(req.params.id);
+    res.set('Content-Type', out.contentType || 'application/octet-stream');
+    res.set('Cache-Control', 'private, max-age=31536000');
+    res.send(out.buffer);
+  } catch (err) {
+    console.log('[chat] media fetch failed: %s', err && err.message);
+    res.status(404).end();
+  }
+});
+
+// Media upload: raw body, already compressed client-side.
+app.post('/api/media', express.raw({ type: '*/*', limit: '12mb' }), async (req, res) => {
+  if (!requireSession(req, res)) return;
+  if (!CHAT_ENABLED) return res.status(503).json({ ok: false });
+  const sender = String(req.query.sender || '').toLowerCase();
+  const kind = String(req.query.kind || '');
+  const mime = String(req.query.mime || 'application/octet-stream');
+  if (['seb', 'hala'].indexOf(sender) === -1 || ['image', 'audio'].indexOf(kind) === -1) {
+    return res.status(400).json({ ok: false, error: 'bad sender/kind' });
+  }
+  try {
+    const saved = await chat.uploadMedia(sender, kind, mime, req.body);
+    // Push to both participants immediately, same as a text message.
+    io.to(ROOM).emit('chat-message', saved.message);
+    res.json({ ok: true, message: saved.message });
+  } catch (err) {
+    console.log('[chat] upload failed: %s', err && err.message);
+    res.status(502).json({ ok: false, error: 'upload failed' });
+  }
+});
+
 // --- Signaling ---
 
 io.use((socket, next) => {
@@ -259,6 +327,32 @@ io.on('connection', (socket) => {
     console.log('[sig] relay call-end from=%s name=%s', socket.id, info.name);
     // Carry the ender's name so the remaining peer can say who hung up.
     socket.to(ROOM).emit('call-end', { fromName: info.name || 'Peer' });
+  });
+
+  // Chat: relay to the room immediately, persist in parallel. The relay is
+  // not blocked on the VM write, so a slow or down chat API degrades to
+  // "message delivered live but not stored" rather than breaking chat.
+  socket.on('chat-send', async (payload) => {
+    const info = presence.get(socket.id) || {};
+    const sender = String((payload && payload.sender) || info.name || '').toLowerCase();
+    const text = String((payload && payload.text) || '').slice(0, 4000);
+    if (['seb', 'hala'].indexOf(sender) === -1 || !text) return;
+
+    const msg = { sender: sender, type: 'text', content: text, mime: null, timestamp: Date.now() };
+    // Echo the sender's own correlation id so their optimistic bubble can be
+    // matched exactly. Clock skew makes timestamps useless for this.
+    const cid = payload && payload.cid ? String(payload.cid).slice(0, 64) : null;
+    io.to(ROOM).emit('chat-message', Object.assign({ cid: cid }, msg));
+
+    if (!CHAT_ENABLED) return;
+    try {
+      const saved = await chat.saveMessage(msg);
+      // Tell clients the authoritative id so they can de-duplicate.
+      if (saved && saved.message) io.to(ROOM).emit('chat-stored', Object.assign({ cid: cid }, saved.message));
+    } catch (err) {
+      console.log('[chat] persist failed: %s', err && err.message);
+      io.to(ROOM).emit('chat-store-failed', { cid: cid, timestamp: msg.timestamp });
+    }
   });
 
   socket.on('disconnect', () => {

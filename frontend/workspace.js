@@ -14,7 +14,12 @@
     settings: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>',
     expand: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>',
     shrink: '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>',
-    leave: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>'
+    leave: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>',
+    chat: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2zM7 9h10v2H7V9zm6 5H7v-2h6v2zm4-6H7V6h10v2z"/></svg>',
+    send: '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>',
+    image: '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5z"/></svg>',
+    micNote: '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>',
+    person: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2c-4 0-9 2-9 5v3h18v-3c0-3-5-5-9-5z"/></svg>'
   };
 
   callView.innerHTML =
@@ -29,6 +34,8 @@
     '      <span class="dc-presence-dot"></span>' +
     '      <span class="dc-presence-text" id="presence-text">1 online</span>' +
     '    </div>' +
+    '    <button class="dc-icon-btn" id="chat-btn" title="Chat">' + ICONS.chat + '<span class="dc-unread-dot" id="unread-dot" hidden></span></button>' +
+    '    <button class="dc-icon-btn" id="profile-btn" title="Switch profile">' + ICONS.person + '</button>' +
     '    <button class="dc-icon-btn" id="settings-btn" title="Devices">' + ICONS.settings + '</button>' +
     '    <button class="dc-icon-btn dc-icon-btn-leave" id="leave-btn" title="Leave call room" aria-label="Leave call room">' + ICONS.leave + '</button>' +
     '  </div>' +
@@ -93,6 +100,21 @@
     '  <button class="dc-ctrl-btn dc-ctrl-danger" id="end-btn" title="Hang up" hidden>' + ICONS.hangup + '</button>' +
     '</div>' +
 
+    '<div class="dc-chat" id="chat-panel" hidden>' +
+    '  <div class="dc-chat-header">' +
+    '    <span>Chat</span>' +
+    '    <button class="dc-icon-btn" id="chat-close" title="Close" aria-label="Close chat">&#10005;</button>' +
+    '  </div>' +
+    '  <div class="dc-chat-log" id="chat-log"></div>' +
+    '  <div class="dc-chat-compose">' +
+    '    <button class="dc-chat-btn" id="chat-image-btn" title="Send image" aria-label="Send image">' + ICONS.image + '</button>' +
+    '    <button class="dc-chat-btn" id="chat-audio-btn" title="Hold to record" aria-label="Record voice note">' + ICONS.micNote + '</button>' +
+    '    <textarea class="dc-chat-input" id="chat-input" rows="1" placeholder="Message..." maxlength="4000"></textarea>' +
+    '    <button class="dc-chat-btn dc-chat-send" id="chat-send" title="Send" aria-label="Send">' + ICONS.send + '</button>' +
+    '    <input type="file" id="chat-file" accept="image/*" hidden />' +
+    '  </div>' +
+    '</div>' +
+    '<div class="dc-lightbox" id="chat-lightbox" hidden><img id="lightbox-img" alt="" /></div>' +
     '<div class="dc-ended" id="call-ended-toast" hidden>' +
     '  <div class="dc-ended-card">' +
     '    <div class="dc-ended-avatar" id="ended-avatar">?</div>' +
@@ -204,9 +226,9 @@
   var VAD_HANG_MS = 250;          // keep ring on 250ms past last loud sample (hysteresis)
 
   // ---------- Name + avatar identity ----------
-  var myName = (window.__PROFILE_NAME && String(window.__PROFILE_NAME).trim()) ||
-               (function () { try { return sessionStorage.getItem('notes.profile'); } catch (e) { return ''; } })() ||
-               'You';
+  var myProfile = window.__PROFILE || { id: 'seb', label: 'Seb' };
+  var myId = myProfile.id;                 // 'seb' | 'hala' - what the server keys on
+  var myName = myProfile.label || 'You';
   var peerName = 'Peer';
 
   function initialOf(name) {
@@ -279,6 +301,7 @@
       acquireWakeLock();
       startSilentKeepalive();
       setupMediaSession();
+      lockLandscape();
       // Make sure the remote audio element is explicitly playing - helps
       // browsers count this page as "playing audio" for background purposes.
       try { remoteAudio.play().catch(function () {}); } catch (e) {}
@@ -288,6 +311,7 @@
       stopSilentKeepalive();
       stopVoiceActivityDetection();
       tearDownMediaSession();
+      unlockOrientation();
       resetFocus();
     }
   }
@@ -1219,6 +1243,320 @@
     var el = pipTile();
     if (!el || !el.style.left) return;
     setPipPosition(el, el.offsetLeft, el.offsetTop);
+  });
+
+  // ---------- Landscape orientation during a call ----------
+  // Both devices are Android, so the lock API is worth trying. Firefox
+  // mobile does not implement it, hence the try/catch and the passive
+  // fallback: the CSS media query reorganises the layout anyway if the
+  // user just turns the phone themselves.
+  var orientationLocked = false;
+
+  async function lockLandscape() {
+    if (!screen.orientation || typeof screen.orientation.lock !== 'function') {
+      log('orientation.lock unavailable - relying on the media query');
+      return;
+    }
+    try {
+      await screen.orientation.lock('landscape');
+      orientationLocked = true;
+      log('orientation locked to landscape');
+    } catch (err) {
+      // Common and harmless: unsupported, or the browser requires
+      // fullscreen first. The media query still handles a manual rotate.
+      log('orientation lock refused:', err && err.name, err && err.message);
+    }
+  }
+
+  function unlockOrientation() {
+    if (!orientationLocked || !screen.orientation || typeof screen.orientation.unlock !== 'function') return;
+    try { screen.orientation.unlock(); log('orientation unlocked'); } catch (e) {}
+    orientationLocked = false;
+  }
+
+  // Passive path: re-clamp the PiP whenever the viewport flips, so a tile
+  // that was dragged somewhere cannot end up off-screen after rotating.
+  function onViewportFlip() {
+    var el = pipTile();
+    if (el && el.style.left) setPipPosition(el, el.offsetLeft, el.offsetTop);
+  }
+  window.addEventListener('orientationchange', function () { setTimeout(onViewportFlip, 250); });
+  if (screen.orientation && screen.orientation.addEventListener) {
+    screen.orientation.addEventListener('change', function () { setTimeout(onViewportFlip, 250); });
+  }
+
+  // ---------- Chat ----------
+  var chatPanel = document.getElementById('chat-panel');
+  var chatLog = document.getElementById('chat-log');
+  var chatInput = document.getElementById('chat-input');
+  var chatSend = document.getElementById('chat-send');
+  var chatBtn = document.getElementById('chat-btn');
+  var chatClose = document.getElementById('chat-close');
+  var chatImageBtn = document.getElementById('chat-image-btn');
+  var chatAudioBtn = document.getElementById('chat-audio-btn');
+  var chatFile = document.getElementById('chat-file');
+  var unreadDot = document.getElementById('unread-dot');
+  var lightbox = document.getElementById('chat-lightbox');
+  var lightboxImg = document.getElementById('lightbox-img');
+  var profileBtn = document.getElementById('profile-btn');
+
+  var historyLoaded = false;
+  var renderedKeys = Object.create(null);
+
+  function authHeaders(extra) {
+    var h = { 'Authorization': 'Bearer ' + (window.__SESSION_KEY || '') };
+    if (extra) { for (var k in extra) h[k] = extra[k]; }
+    return h;
+  }
+  function mediaUrl(id) {
+    return '/api/media/' + encodeURIComponent(id) + '?k=' + encodeURIComponent(window.__SESSION_KEY || '');
+  }
+  function timeLabel(ts) {
+    return new Date(ts || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  // Correlation is by client-generated id, never by timestamp: the server
+  // stamps its own clock, so the two never match.
+  function msgKey(m) {
+    if (m.id) return 'id|' + m.id;
+    if (m.cid) return 'cid|' + m.cid;
+    return m.sender + '|' + m.timestamp + '|' + String(m.content).slice(0, 40);
+  }
+
+  function renderMessage(m, pending) {
+    var key = msgKey(m);
+    if (renderedKeys[key]) return renderedKeys[key];
+
+    var wrap = document.createElement('div');
+    wrap.className = 'dc-msg ' + (m.sender === myId ? 'dc-msg-mine' : 'dc-msg-theirs');
+    if (pending) wrap.classList.add('dc-msg-pending');
+
+    if (m.type === 'image') {
+      var img = document.createElement('img');
+      img.className = 'dc-msg-image';
+      img.src = mediaUrl(m.content);
+      img.alt = 'image';
+      img.addEventListener('click', function () {
+        lightboxImg.src = img.src;
+        lightbox.hidden = false;
+      });
+      wrap.appendChild(img);
+    } else if (m.type === 'audio') {
+      var audio = document.createElement('audio');
+      audio.className = 'dc-msg-audio';
+      audio.controls = true;
+      audio.preload = 'none';
+      audio.src = mediaUrl(m.content);
+      wrap.appendChild(audio);
+    } else {
+      var bubble = document.createElement('div');
+      bubble.className = 'dc-msg-bubble';
+      bubble.textContent = m.content;   // textContent, never innerHTML
+      wrap.appendChild(bubble);
+    }
+
+    var time = document.createElement('div');
+    time.className = 'dc-msg-time';
+    time.textContent = timeLabel(m.timestamp);
+    wrap.appendChild(time);
+
+    var empty = chatLog.querySelector('.dc-chat-empty');
+    if (empty && empty.parentNode) empty.parentNode.removeChild(empty);
+    chatLog.appendChild(wrap);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    renderedKeys[key] = wrap;
+    if (m.cid) renderedKeys['cid|' + m.cid] = wrap;
+    return wrap;
+  }
+
+  function settle(m) {
+    // A message we already drew optimistically has come back from the server.
+    if (!m.cid) return false;
+    var prov = renderedKeys['cid|' + m.cid];
+    if (!prov) return false;
+    prov.classList.remove('dc-msg-pending');
+    renderedKeys[msgKey(m)] = prov;
+    return true;
+  }
+
+  async function loadHistory() {
+    if (historyLoaded) return;
+    historyLoaded = true;
+    try {
+      var r = await fetch('/api/history', {
+        method: 'POST',
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
+        body: '{}'
+      });
+      var data = await r.json();
+      (data.messages || []).forEach(function (m) { renderMessage(m, false); });
+      if (!chatLog.children.length) {
+        var e = document.createElement('div');
+        e.className = 'dc-chat-empty';
+        e.textContent = 'No messages yet.';
+        chatLog.appendChild(e);
+      }
+    } catch (err) {
+      log('history load failed', err && err.message);
+      historyLoaded = false;
+      // Say so rather than showing an unexplained empty panel. Live
+      // messages still work over the socket; only stored history is down.
+      if (!chatLog.children.length) {
+        var w = document.createElement('div');
+        w.className = 'dc-chat-empty';
+        w.textContent = 'History unavailable - new messages will still arrive.';
+        chatLog.appendChild(w);
+      }
+    }
+  }
+
+  function openChat() {
+    chatPanel.hidden = false;
+    unreadDot.hidden = true;
+    loadHistory();
+    setTimeout(function () { chatInput.focus(); }, 50);
+  }
+  chatBtn.addEventListener('click', function () {
+    if (chatPanel.hidden) openChat(); else chatPanel.hidden = true;
+  });
+  chatClose.addEventListener('click', function () { chatPanel.hidden = true; });
+  lightbox.addEventListener('click', function () { lightbox.hidden = true; lightboxImg.src = ''; });
+
+  function sendText() {
+    var text = (chatInput.value || '').trim();
+    if (!text) return;
+    var cid = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    renderMessage({ sender: myId, type: 'text', content: text, timestamp: Date.now(), cid: cid }, true);
+    socket.emit('chat-send', { sender: myId, text: text, cid: cid });
+    chatInput.value = '';
+    chatInput.style.height = '';
+  }
+  chatSend.addEventListener('click', sendText);
+  chatInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(); }
+  });
+  chatInput.addEventListener('input', function () {
+    chatInput.style.height = 'auto';
+    chatInput.style.height = Math.min(chatInput.scrollHeight, 100) + 'px';
+  });
+
+  socket.on('chat-message', function (m) {
+    if (!m) return;
+    if (m.sender === myId && settle(m)) return;   // our own echo
+    renderMessage(m, false);
+    if (chatPanel.hidden) unreadDot.hidden = false;
+  });
+  socket.on('chat-stored', function (m) { if (m) settle(m); });
+  socket.on('chat-store-failed', function (info) {
+    // Delivered live but not persisted: mark it so it is not mistaken for
+    // part of the permanent history.
+    if (!info || !info.cid) return;
+    var el = renderedKeys['cid|' + info.cid];
+    if (el) { el.classList.remove('dc-msg-pending'); el.classList.add('dc-msg-failed'); }
+  });
+
+  // --- images: downscale before upload so we do not burn VM disk ---
+  chatImageBtn.addEventListener('click', function () { chatFile.click(); });
+  chatFile.addEventListener('change', async function () {
+    var file = chatFile.files && chatFile.files[0];
+    chatFile.value = '';
+    if (!file) return;
+    try {
+      var blob = await compressImage(file, 1280, 0.82);
+      await uploadMedia(blob, 'image', 'image/jpeg');
+    } catch (err) {
+      log('image upload failed', err && err.message);
+      setStatus('Could not send image', 'error');
+    }
+  });
+
+  function compressImage(file, maxDim, quality) {
+    return new Promise(function (resolve, reject) {
+      var img = new Image();
+      var url = URL.createObjectURL(file);
+      img.onload = function () {
+        URL.revokeObjectURL(url);
+        var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        var cw = Math.round(img.width * scale), ch = Math.round(img.height * scale);
+        var canvas = document.createElement('canvas');
+        canvas.width = cw; canvas.height = ch;
+        canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
+        canvas.toBlob(function (blob) {
+          blob ? resolve(blob) : reject(new Error('encode failed'));
+        }, 'image/jpeg', quality);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('decode failed')); };
+      img.src = url;
+    });
+  }
+
+  async function uploadMedia(blob, kind, mime) {
+    var q = '?sender=' + encodeURIComponent(myId) + '&kind=' + kind + '&mime=' + encodeURIComponent(mime);
+    var r = await fetch('/api/media' + q, {
+      method: 'POST',
+      headers: authHeaders({ 'Content-Type': 'application/octet-stream' }),
+      body: blob
+    });
+    if (!r.ok) throw new Error('upload HTTP ' + r.status);
+    return r.json();   // the server broadcasts chat-message itself
+  }
+
+  // --- voice notes: hold to record, release to send ---
+  var recorder = null, recChunks = [], recStream = null;
+
+  async function startRecording() {
+    if (recorder) return;
+    try {
+      recStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+      });
+    } catch (err) { setStatus('Mic permission needed', 'error'); return; }
+    var mime = (window.MediaRecorder && MediaRecorder.isTypeSupported('audio/webm;codecs=opus'))
+      ? 'audio/webm;codecs=opus' : 'audio/webm';
+    recChunks = [];
+    try {
+      recorder = new MediaRecorder(recStream, { mimeType: mime, audioBitsPerSecond: 32000 });
+    } catch (err) {
+      recorder = new MediaRecorder(recStream);
+    }
+    recorder.ondataavailable = function (e) { if (e.data && e.data.size) recChunks.push(e.data); };
+    recorder.start();
+    chatAudioBtn.classList.add('is-recording');
+  }
+
+  async function stopRecording(send) {
+    if (!recorder) return;
+    var rec = recorder, stream = recStream;
+    recorder = null; recStream = null;
+    chatAudioBtn.classList.remove('is-recording');
+    await new Promise(function (resolve) { rec.onstop = resolve; try { rec.stop(); } catch (e) { resolve(); } });
+    try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+    if (!send || !recChunks.length) { recChunks = []; return; }
+    var blob = new Blob(recChunks, { type: 'audio/webm' });
+    recChunks = [];
+    if (blob.size < 1200) return;   // a stray tap, not a voice note
+    try { await uploadMedia(blob, 'audio', 'audio/webm'); }
+    catch (err) { log('audio upload failed', err && err.message); setStatus('Could not send audio', 'error'); }
+  }
+
+  chatAudioBtn.addEventListener('pointerdown', function (e) { e.preventDefault(); startRecording(); });
+  chatAudioBtn.addEventListener('pointerup', function () { stopRecording(true); });
+  chatAudioBtn.addEventListener('pointerleave', function () { if (recorder) stopRecording(false); });
+  chatAudioBtn.addEventListener('pointercancel', function () { if (recorder) stopRecording(false); });
+
+  // --- switch profile (someone opening the site on another device) ---
+  profileBtn.addEventListener('click', function () {
+    if (typeof window.__pickProfile !== 'function') return;
+    window.__pickProfile(function (p) {
+      myProfile = p; myId = p.id; myName = p.label;
+      applyIdentity();
+      socket.emit('hello', { name: myName });
+      // Redraw the log so the mine/theirs sides swap correctly.
+      chatLog.innerHTML = '';
+      renderedKeys = Object.create(null);
+      historyLoaded = false;
+      if (!chatPanel.hidden) loadHistory();
+      log('profile switched to', p.id);
+    });
   });
 
   setCallState('idle');

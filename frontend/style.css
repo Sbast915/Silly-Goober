@@ -271,6 +271,11 @@ body {
   background: #000;
   display: block;
 }
+/* Your own preview is mirrored, like looking in a mirror - raising your
+   right hand should move the hand on the right. The remote video is NOT
+   mirrored: that is what the other person's camera actually saw. */
+#local-video { transform: scaleX(-1); }
+
 /* Voice-activity ring: only while that person is actually speaking */
 .dc-tile.dc-speaking {
   box-shadow: 0 0 0 2px #23a559;
@@ -801,4 +806,209 @@ body.is-observer #call-btn:hover { background: rgba(255,255,255,0.06); }
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-4px); }
   75% { transform: translateX(4px); }
+}
+
+/* ============================================================
+   Landscape call layout (phones in a call)
+   Applies when the screen is short and wide, whether we got there via
+   screen.orientation.lock() or the user just rotated the phone.
+   ============================================================ */
+@media (orientation: landscape) and (max-height: 500px) {
+  /* Header shrinks to a thin strip - the video is what matters. */
+  .dc-header { height: 34px; padding: 0 10px; }
+  .dc-channel-name { font-size: 13px; }
+  .dc-presence { padding: 2px 8px; font-size: 11px; }
+
+  /* Video area and controls sit side by side instead of stacked, so the
+     video keeps nearly the full width and height. */
+  #workspace-view:not([hidden]) { flex-direction: row; flex-wrap: wrap; }
+  .dc-header { width: 100%; }
+
+  .dc-stage {
+    flex-direction: row;
+    padding: 8px;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+    /* stretch, not center: in landscape the vertical space is the scarce
+       resource, so the tiles must fill it instead of sitting centred with
+       dead bands above and below. */
+    align-items: stretch;
+  }
+  .dc-tile {
+    flex: 1 1 0;
+    min-height: 0;
+    aspect-ratio: auto;
+    height: 100%;
+    max-height: none;
+  }
+
+  /* Controls become a compact vertical rail on the right. */
+  .dc-controls {
+    flex-direction: column;
+    padding: 8px 10px;
+    gap: 10px;
+    border-top: none;
+    border-left: 1px solid #1e1f22;
+    justify-content: center;
+    width: auto;
+  }
+  .dc-ctrl-btn { width: 42px; height: 42px; }
+  .dc-ctrl-primary { width: 48px; height: 48px; }
+
+  /* Status line is noise at this size. */
+  .dc-status-bar { display: none; }
+
+  /* Settings panel would eat the whole screen; overlay it instead. */
+  .dc-settings:not([hidden]) {
+    position: absolute;
+    right: 64px; bottom: 8px; top: 42px;
+    width: 260px;
+    overflow-y: auto;
+    border-radius: 10px;
+    z-index: 15;
+  }
+
+  /* Keep the PiP proportionate to the smaller stage. */
+  .dc-stage.dc-focus-local #tile-remote,
+  .dc-stage.dc-focus-remote #tile-local {
+    width: 120px;
+    height: 88px;
+    bottom: 10px;
+    right: 10px;
+  }
+}
+
+/* ============================================================
+   Profile picker (Seb / Hala)
+   ============================================================ */
+.profile-pick {
+  position: fixed; inset: 0; z-index: 100;
+  background: #1e1f22;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px;
+  font-family: "gg sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  animation: dc-fade 200ms ease-out;
+}
+.profile-pick-card {
+  background: #2b2d31; border-radius: 14px; padding: 30px 28px;
+  display: flex; flex-direction: column; align-items: center; gap: 20px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5); max-width: 380px; width: 100%;
+}
+.profile-pick-card h2 { margin: 0; font-size: 20px; color: #dbdee1; font-weight: 600; }
+.profile-pick-options { display: flex; gap: 18px; }
+.profile-option {
+  background: none; border: 2px solid transparent; border-radius: 12px;
+  padding: 14px 18px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  transition: background 120ms ease, border-color 120ms ease, transform 100ms ease;
+  font-family: inherit;
+}
+.profile-option:hover { background: rgba(255,255,255,0.06); }
+.profile-option:active { transform: scale(0.96); }
+.profile-option.is-current { border-color: #5865f2; background: rgba(88,101,242,0.12); }
+.profile-option-avatar {
+  width: 72px; height: 72px; min-width: 72px; min-height: 72px;
+  border-radius: 50%; aspect-ratio: 1/1; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 28px; font-weight: 700;
+}
+.profile-option-name { font-size: 15px; font-weight: 600; color: #dbdee1; }
+.profile-pick-hint { font-size: 12px; color: #949ba4; text-align: center; margin: 0; }
+
+/* ============================================================
+   Chat
+   ============================================================ */
+.dc-chat:not([hidden]) {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: min(380px, 100%);
+  background: #2b2d31;
+  border-left: 1px solid #1e1f22;
+  display: flex; flex-direction: column;
+  z-index: 18;
+  animation: dc-slide-in 180ms ease-out;
+}
+@keyframes dc-slide-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+
+.dc-chat-header {
+  height: 44px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 8px 0 14px;
+  border-bottom: 1px solid #1e1f22;
+  font-weight: 600; font-size: 14px; color: #dbdee1;
+}
+.dc-chat-log {
+  flex: 1; overflow-y: auto; min-height: 0;
+  padding: 12px; display: flex; flex-direction: column; gap: 8px;
+}
+.dc-msg { max-width: 82%; display: flex; flex-direction: column; gap: 3px; }
+.dc-msg-mine { align-self: flex-end; align-items: flex-end; }
+.dc-msg-theirs { align-self: flex-start; align-items: flex-start; }
+.dc-msg-bubble {
+  padding: 8px 12px; border-radius: 14px;
+  font-size: 14px; line-height: 1.4;
+  word-break: break-word; white-space: pre-wrap;
+  background: #383a40; color: #dbdee1;
+}
+.dc-msg-mine .dc-msg-bubble { background: #5865f2; color: #fff; }
+.dc-msg-time { font-size: 10px; color: #949ba4; padding: 0 4px; }
+.dc-msg-pending { opacity: 0.55; }
+.dc-msg-failed .dc-msg-bubble { border: 1px solid #f23f43; }
+
+.dc-msg-image {
+  max-width: 240px; border-radius: 12px; cursor: zoom-in; display: block;
+  background: #1e1f22;
+}
+.dc-msg-audio { width: 230px; height: 38px; }
+
+.dc-chat-empty { color: #949ba4; font-size: 13px; text-align: center; margin: auto; }
+
+.dc-chat-compose {
+  flex-shrink: 0; border-top: 1px solid #1e1f22;
+  padding: 8px; display: flex; align-items: flex-end; gap: 6px;
+}
+.dc-chat-input {
+  flex: 1; min-width: 0; resize: none;
+  background: #1e1f22; color: #dbdee1;
+  border: 1px solid #1e1f22; border-radius: 8px;
+  padding: 9px 11px; font-size: 14px; font-family: inherit;
+  max-height: 100px;
+}
+.dc-chat-input:focus { outline: none; border-color: #5865f2; }
+.dc-chat-btn {
+  width: 36px; height: 36px; flex-shrink: 0;
+  border: none; border-radius: 8px;
+  background: rgba(255,255,255,0.06); color: #b5bac1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: background 120ms ease, color 120ms ease;
+}
+.dc-chat-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.dc-chat-btn.is-recording { background: #f23f43; color: #fff; animation: dc-pulse 1s infinite; }
+.dc-chat-send { background: #5865f2; color: #fff; }
+.dc-chat-send:hover { background: #4752c4; }
+
+/* unread dot on the chat toggle */
+.dc-icon-btn { position: relative; }
+.dc-unread-dot {
+  position: absolute; top: 5px; right: 5px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: #f23f43; border: 2px solid #2b2d31;
+}
+
+/* lightbox for images */
+.dc-lightbox:not([hidden]) {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(0,0,0,0.9);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px; cursor: zoom-out;
+}
+.dc-lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; }
+
+/* On a phone the chat takes the whole screen rather than a narrow strip. */
+@media (max-width: 640px) {
+  .dc-chat:not([hidden]) { width: 100%; border-left: none; }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+  .dc-chat:not([hidden]) { width: min(320px, 60%); }
+  .dc-chat-header { height: 34px; }
 }

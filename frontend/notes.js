@@ -114,11 +114,20 @@
       .catch(function () { /* offline: local filtering already ran */ });
   }
 
+  // The two people who use this. Ids are lowercase and stable - they are
+  // what the server and the message history key on. Labels/colours are
+  // presentation only.
+  var PROFILES = [
+    { id: 'seb',  label: 'Seb',  initial: 'S', color: '#5865f2' },
+    { id: 'hala', label: 'Hala', initial: 'H', color: '#eb459e' }
+  ];
+  var PROFILE_KEY = 'notes.profile';
+
   function openWorkspace(key) {
     window.__SESSION_KEY = key;
-    askForProfileName(function (name) {
-      window.__PROFILE_NAME = name;
-      try { sessionStorage.setItem('notes.profile', name); } catch (e) {}
+    pickProfile(function (profile) {
+      window.__PROFILE = profile;
+      window.__PROFILE_NAME = profile.label;
       notesView.hidden = true;
       workspaceView.hidden = false;
       diag('loading workspace modules');
@@ -128,38 +137,46 @@
     });
   }
 
-  function askForProfileName(callback) {
-    var saved = '';
-    try { saved = sessionStorage.getItem('notes.profile') || ''; } catch (e) {}
+  // Stored in localStorage (per device, survives restarts) rather than
+  // sessionStorage, so you only pick once per phone. This is not auth - it
+  // just says which of the two you are.
+  function pickProfile(callback) {
+    var savedId = '';
+    try { savedId = localStorage.getItem(PROFILE_KEY) || ''; } catch (e) {}
 
     var overlay = document.createElement('div');
-    overlay.className = 'name-prompt';
+    overlay.className = 'profile-pick';
+    var opts = PROFILES.map(function (p) {
+      return '<button type="button" class="profile-option' +
+             (p.id === savedId ? ' is-current' : '') + '" data-id="' + p.id + '">' +
+             '<span class="profile-option-avatar" style="background:' + p.color + '">' + p.initial + '</span>' +
+             '<span class="profile-option-name">' + p.label + '</span>' +
+             '</button>';
+    }).join('');
     overlay.innerHTML =
-      '<div class="name-prompt-card">' +
-      '  <h2>What should we call you?</h2>' +
-      '  <p>Just for this session.</p>' +
-      '  <input id="name-input" type="text" maxlength="24" autocomplete="off" spellcheck="false" placeholder="Your name" />' +
-      '  <button id="name-continue" type="button">Continue</button>' +
+      '<div class="profile-pick-card">' +
+      '  <h2>Who are you?</h2>' +
+      '  <div class="profile-pick-options">' + opts + '</div>' +
+      '  <p class="profile-pick-hint">Saved on this device. Change it any time from the header.</p>' +
       '</div>';
     document.body.appendChild(overlay);
 
-    var input = overlay.querySelector('#name-input');
-    var btn = overlay.querySelector('#name-continue');
-    if (saved) input.value = saved;
-    setTimeout(function () { input.focus(); input.select(); }, 30);
-
-    function finish() {
-      var name = (input.value || '').trim().slice(0, 24);
-      if (!name) { input.focus(); input.classList.add('name-error'); return; }
+    overlay.addEventListener('click', function (e) {
+      var btn = e.target.closest ? e.target.closest('.profile-option') : null;
+      if (!btn) return;
+      var chosen = PROFILES.filter(function (p) { return p.id === btn.getAttribute('data-id'); })[0];
+      if (!chosen) return;
+      try { localStorage.setItem(PROFILE_KEY, chosen.id); } catch (e) {}
       overlay.parentNode.removeChild(overlay);
-      callback(name);
-    }
-    btn.addEventListener('click', finish);
-    input.addEventListener('keydown', function (e) {
-      input.classList.remove('name-error');
-      if (e.key === 'Enter') { e.preventDefault(); finish(); }
+      callback(chosen);
     });
   }
+
+  // Exposed so the workspace can offer "switch profile" without duplicating
+  // the list or the storage key.
+  window.__PROFILES = PROFILES;
+  window.__PROFILE_KEY = PROFILE_KEY;
+  window.__pickProfile = pickProfile;
 
   render('');
 })();
