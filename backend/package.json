@@ -5,7 +5,9 @@
   "description": "Signaling server + static host for a private two-person WebRTC call app",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "check-turn": "node check-turn.js",
+    "make-passphrase": "node make-passphrase.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
