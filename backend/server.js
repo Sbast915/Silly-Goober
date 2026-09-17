@@ -14,9 +14,20 @@ const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 const REAL_PASS_HASH = process.env.REAL_PASS_HASH || '';
 const DECOY_PASS_HASH = process.env.DECOY_PASS_HASH || '';
-const METERED_APP_NAME = process.env.METERED_APP_NAME || '';
-const METERED_API_KEY = process.env.METERED_API_KEY || '';
-const METERED_SECRET_KEY = process.env.METERED_SECRET_KEY || '';
+// --- Self-hosted coturn ---
+const TURN_SECRET = process.env.TURN_SECRET || '';
+const TURN_HOST = process.env.TURN_HOST || '141.148.243.201';
+const TURN_PORT = parseInt(process.env.TURN_PORT || '3478', 10);
+const TURN_TLS_PORT = parseInt(process.env.TURN_TLS_PORT || '5349', 10);
+const TURN_REALM = process.env.TURN_REALM || 'silly-goober.turn';
+const TURN_TTL = parseInt(process.env.TURN_TTL || '3600', 10);
+// turns:// is opt-in: coturn will not open its TLS listener without
+// cert=/pkey= in turnserver.conf, so advertising it by default would hand
+// the browser an endpoint where every candidate silently fails.
+const TURN_TLS_ENABLED = process.env.TURN_TLS === '1';
+
+const { buildIceServers, makeTurnCredentials } = require('./turn');
+const { runTurnSelfTest } = require('./turn-selftest');
 
 const ROOM = 'call';
 const TOKEN_TTL_MS = 5 * 60 * 1000;
@@ -131,194 +142,61 @@ function tokenFromReq(req) {
   return (req.body && req.body.token) || '';
 }
 
-const FALLBACK_ICE = [
+// ---------------------------------------------------------------------------
+// TURN credentials: generated locally with HMAC-SHA1 against our own coturn
+// server's static-auth-secret. No third-party API call, no network dependency
+// in the hot path, and the shared secret never leaves this process.
+// ---------------------------------------------------------------------------
+
+// Public STUN kept only as a discovery aid; it can never relay, so it is not
+// a substitute for our TURN server on strict NATs.
+const PUBLIC_STUN = [
   { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  {
-    urls: [
-      'turn:openrelay.metered.ca:80',
-      'turn:openrelay.metered.ca:443',
-      'turn:openrelay.metered.ca:443?transport=tcp'
-    ],
-    username: 'openrelayproject',
-    credential: 'openrelayproject'
-  }
+  { urls: 'stun:stun1.l.google.com:19302' }
 ];
 
-async function fetchMeteredIceViaApiKey(logPrefix) {
-  const url = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(METERED_API_KEY);
-  const redactedUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=<REDACTED len=' + METERED_API_KEY.length + '>';
-  console.log('%s fetching apiKey mode url=%s', logPrefix, redactedUrl);
-  const r = await fetch(url);
-  const bodyText = await r.text();
-  console.log('%s apiKey status=%d ct=%s body-head=%s', logPrefix,
-    r.status, r.headers.get('content-type') || '(none)',
-    bodyText.slice(0, 300).replace(/\s+/g, ' '));
-  if (!r.ok) {
-    const hint = hintFromMeteredError(bodyText);
-    if (hint) console.log('%s %s', logPrefix, hint);
-    return null;
+function getIceServers(logPrefix, label) {
+  if (!TURN_SECRET) {
+    console.log('%s TURN_SECRET is UNSET - serving public STUN only. Calls across strict NATs WILL fail.', logPrefix);
+    return { iceServers: PUBLIC_STUN, source: 'stun-only' };
   }
-  try {
-    const parsed = JSON.parse(bodyText);
-    if (Array.isArray(parsed) && parsed.length) return parsed;
-  } catch (e) { /* fall through */ }
-  return null;
-}
 
-function hintFromMeteredError(bodyText) {
-  var lc = (bodyText || '').toLowerCase();
-  if (lc.indexOf('invalid secretkey') !== -1 || lc.indexOf('authorization failed') !== -1) {
-    return 'HINT: Metered says the secretKey OR the app subdomain is wrong. Verify METERED_APP_NAME (the "<name>" in <name>.metered.live) matches your dashboard exactly, and that METERED_SECRET_KEY is the current Secret Key from Dashboard > Developers (regenerate it and try again if unsure).';
-  }
-  if (lc.indexOf('not found') !== -1 || lc.indexOf('cannot get') !== -1 || lc.indexOf('cannot post') !== -1) {
-    return 'HINT: Endpoint not found. The METERED_APP_NAME subdomain probably does not exist. Double-check the exact spelling in Metered dashboard.';
-  }
-  return null;
-}
-
-async function createMeteredCredential(logPrefix) {
-  const createUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credential?secretKey=' + encodeURIComponent(METERED_SECRET_KEY);
-  console.log('%s POST create credential', logPrefix);
-  const r = await fetch(createUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ expiryInSeconds: 24 * 60 * 60, label: 'h-calls-auto' })
+  const built = buildIceServers({
+    host: TURN_HOST,
+    port: TURN_PORT,
+    tlsPort: TURN_TLS_PORT,
+    tlsEnabled: TURN_TLS_ENABLED,
+    secret: TURN_SECRET,
+    ttlSeconds: TURN_TTL,
+    label: label || 'user'
   });
-  const bodyText = await r.text();
-  console.log('%s create status=%d ct=%s body-head=%s', logPrefix,
-    r.status, r.headers.get('content-type') || '(none)',
-    bodyText.slice(0, 300).replace(/\s+/g, ' '));
-  if (!r.ok) {
-    const hint = hintFromMeteredError(bodyText);
-    if (hint) console.log('%s %s', logPrefix, hint);
-    return null;
-  }
-  try {
-    const cred = JSON.parse(bodyText);
-    if (cred && cred.apiKey) {
-      console.log('%s created credential label=%s (may take up to 2min to fully propagate across Metered edges)', logPrefix, cred.label);
-      return cred;
-    }
-  } catch (e) { /* fall through */ }
-  return null;
+
+  // Public STUN appended after our own server: harmless, and gives the browser
+  // a second opinion on its reflexive address.
+  const iceServers = built.iceServers.concat(PUBLIC_STUN);
+  console.log('%s issued creds host=%s ttl=%ds expires=%d tls=%s',
+    logPrefix, TURN_HOST, TURN_TTL, built.expiresAt, TURN_TLS_ENABLED);
+  return { iceServers, source: 'self-hosted-coturn', expiresAt: built.expiresAt };
 }
 
-async function fetchIceForApiKey(logPrefix, apiKey, label) {
-  const iceUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v1/turn/credentials?apiKey=' + encodeURIComponent(apiKey);
-  console.log('%s GET ice via credential label=%s apiKey-len=%d', logPrefix, label || '(?)', apiKey.length);
-  const r = await fetch(iceUrl);
-  const bodyText = await r.text();
-  console.log('%s ice status=%d body-head=%s', logPrefix,
-    r.status, bodyText.slice(0, 300).replace(/\s+/g, ' '));
-  if (!r.ok) return null;
-  try {
-    const parsed = JSON.parse(bodyText);
-    if (Array.isArray(parsed) && parsed.length) return parsed;
-  } catch (e) { /* fall through */ }
-  return null;
-}
 
-async function fetchMeteredIceViaSecretKey(logPrefix) {
-  // Step 1: try to list existing credentials via v2, so we can reuse one
-  //         and avoid piling up new credentials on every 60s cache miss.
-  const listUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v2/turn/credentials?secretKey=' + encodeURIComponent(METERED_SECRET_KEY);
-  const redactedListUrl = 'https://' + METERED_APP_NAME + '.metered.live/api/v2/turn/credentials?secretKey=<REDACTED len=' + METERED_SECRET_KEY.length + '>';
-  console.log('%s GET list url=%s', logPrefix, redactedListUrl);
-  let chosen = null;
-  try {
-    const r = await fetch(listUrl);
-    const bodyText = await r.text();
-    console.log('%s list status=%d ct=%s body-head=%s', logPrefix,
-      r.status, r.headers.get('content-type') || '(none)',
-      bodyText.slice(0, 300).replace(/\s+/g, ' '));
-
-    if (r.ok) {
-      try {
-        const listed = JSON.parse(bodyText);
-        const items = listed && Array.isArray(listed.data) ? listed.data : (Array.isArray(listed) ? listed : []);
-        chosen = items.find(function (c) { return c && !c.expired && c.apiKey; }) || null;
-        if (chosen) console.log('%s reusing existing credential label=%s', logPrefix, chosen.label);
-        else console.log('%s list ok but no reusable credentials (count=%d)', logPrefix, items.length);
-      } catch (e) {
-        console.log('%s list body not JSON, will try to create anyway', logPrefix);
-      }
-    } else {
-      const hint = hintFromMeteredError(bodyText);
-      if (hint) console.log('%s %s', logPrefix, hint);
-      // For auth errors, don't bother trying create (same key, same result).
-      // For other errors (endpoint moved, transient), still try create as a fallback.
-      if (r.status === 401 || r.status === 403) {
-        console.log('%s list auth-failed, aborting (create would fail identically)', logPrefix);
-        return null;
-      }
-      console.log('%s list failed non-auth, will attempt create as fallback', logPrefix);
-    }
-  } catch (err) {
-    console.log('%s list threw: %s, will attempt create as fallback', logPrefix, err && err.message);
-  }
-
-  // Step 2: no reusable credential -> create one
-  if (!chosen) {
-    chosen = await createMeteredCredential(logPrefix);
-    if (!chosen) return null;
-  }
-
-  // Step 3: fetch iceServers using the credential's apiKey
-  return fetchIceForApiKey(logPrefix, chosen.apiKey, chosen.label);
-}
-
-// Cache last successful Metered result for a short window so we don't hammer their API.
-let iceCache = null; // { iceServers, expires, source }
-const ICE_CACHE_MS = 60 * 1000;
-
-async function getIceServers(logPrefix) {
-  const now = Date.now();
-  if (iceCache && iceCache.expires > now) {
-    console.log('%s cache hit source=%s', logPrefix, iceCache.source);
-    return { iceServers: iceCache.iceServers, source: iceCache.source };
-  }
-
-  if (METERED_APP_NAME && METERED_SECRET_KEY) {
-    try {
-      const iceServers = await fetchMeteredIceViaSecretKey(logPrefix);
-      if (iceServers) {
-        iceCache = { iceServers, expires: now + ICE_CACHE_MS, source: 'metered-secret' };
-        return { iceServers, source: 'metered-secret' };
-      }
-    } catch (err) {
-      console.log('%s secretKey mode threw: %s (%s)', logPrefix, err && err.message, err && err.name);
-    }
-  } else if (METERED_APP_NAME && METERED_API_KEY) {
-    try {
-      const iceServers = await fetchMeteredIceViaApiKey(logPrefix);
-      if (iceServers) {
-        iceCache = { iceServers, expires: now + ICE_CACHE_MS, source: 'metered-apikey' };
-        return { iceServers, source: 'metered-apikey' };
-      }
-    } catch (err) {
-      console.log('%s apiKey mode threw: %s (%s)', logPrefix, err && err.message, err && err.name);
-    }
-  } else {
-    const missing = [];
-    if (!METERED_APP_NAME) missing.push('METERED_APP_NAME');
-    if (!METERED_API_KEY && !METERED_SECRET_KEY) missing.push('METERED_API_KEY or METERED_SECRET_KEY');
-    console.log('%s no metered config (missing: %s)', logPrefix, missing.join(', '));
-  }
-
-  return { iceServers: FALLBACK_ICE, source: 'fallback' };
-}
-
-app.post('/api/ice-config', async (req, res) => {
+app.post('/api/ice-config', (req, res) => {
   const token = tokenFromReq(req);
   const rec = token && tokens.get(token);
   if (!rec || rec.expires < Date.now()) {
     return res.status(401).json({ ok: false });
   }
 
-  const result = await getIceServers('[ice]');
+  // Credentials are derived per-request and expire on their own, so there is
+  // nothing to cache and no upstream API that can rate-limit or go down.
+  const result = getIceServers('[ice]', 'web');
   console.log('[ice] serving source=%s servers=%d', result.source, result.iceServers.length);
-  res.json({ ok: true, iceServers: result.iceServers, source: result.source });
+  res.json({
+    ok: true,
+    iceServers: result.iceServers,
+    source: result.source,
+    expiresAt: result.expiresAt
+  });
 });
 
 // --- Signaling ---
@@ -415,25 +293,50 @@ io.on('connection', (socket) => {
 
 server.listen(PORT, () => {
   console.log('listening on ' + PORT);
-  console.log('[startup] env presence: REAL_PASS_HASH=%s DECOY_PASS_HASH=%s METERED_APP_NAME=%s METERED_API_KEY=%s METERED_SECRET_KEY=%s',
+  console.log('[startup] env presence: REAL_PASS_HASH=%s DECOY_PASS_HASH=%s TURN_SECRET=%s TURN_HOST=%s:%d realm=%s tls=%s',
     REAL_PASS_HASH ? '(set len=' + REAL_PASS_HASH.length + ')' : '(UNSET)',
     DECOY_PASS_HASH ? '(set len=' + DECOY_PASS_HASH.length + ')' : '(UNSET)',
-    METERED_APP_NAME ? '(set="' + METERED_APP_NAME + '")' : '(UNSET)',
-    METERED_API_KEY ? '(set len=' + METERED_API_KEY.length + ')' : '(UNSET)',
-    METERED_SECRET_KEY ? '(set len=' + METERED_SECRET_KEY.length + ')' : '(UNSET)'
+    TURN_SECRET ? '(set len=' + TURN_SECRET.length + ')' : '(UNSET)',
+    TURN_HOST, TURN_PORT, TURN_REALM, TURN_TLS_ENABLED
   );
 
-  // Self-test at startup: proves whether the configured Metered creds actually work,
-  // without waiting for the first real call to fail.
-  if (METERED_APP_NAME && (METERED_API_KEY || METERED_SECRET_KEY)) {
-    setTimeout(async () => {
-      console.log('[startup] running Metered self-test...');
-      const result = await getIceServers('[startup-selftest]');
-      if (result.source === 'fallback') {
-        console.log('[startup] SELF-TEST FAILED - Metered creds did NOT work, falls back to Open Relay. Check the [startup-selftest] lines above for the exact reason from Metered.');
-      } else {
-        console.log('[startup] SELF-TEST OK - source=%s, servers=%d', result.source, result.iceServers.length);
-      }
-    }, 500);
+  if (!TURN_SECRET) {
+    console.log('[startup] TURN_SECRET is UNSET - no relay will be offered. Set it to the static-auth-secret from /etc/turnserver.conf.');
+    return;
   }
+
+  // Startup self-test against our own coturn. Unlike the old Metered check
+  // (which only proved an HTTP endpoint returned JSON), this speaks real
+  // STUN/TURN: a Binding request to prove reachability, then an authenticated
+  // Allocate to prove TURN_SECRET actually matches turnserver.conf.
+  setTimeout(async () => {
+    console.log('[startup] running TURN self-test against %s:%d ...', TURN_HOST, TURN_PORT);
+    const creds = makeTurnCredentials(TURN_SECRET, 120, 'startup-selftest');
+    const r = await runTurnSelfTest({
+      host: TURN_HOST,
+      port: TURN_PORT,
+      realm: TURN_REALM,
+      username: creds.username,
+      credential: creds.credential,
+      timeoutMs: 6000
+    });
+
+    if (r.stun.ok) {
+      console.log('[startup-selftest] STUN OK - server sees us as %s', r.stun.mapped);
+    } else {
+      console.log('[startup-selftest] STUN FAILED - %s', r.stun.error);
+      console.log('[startup-selftest] HINT: 3478/udp is not reachable. On Oracle Cloud the VCN Security List / NSG must allow it - the instance firewall alone is not enough.');
+    }
+
+    if (r.allocate.ok) {
+      console.log('[startup-selftest] TURN ALLOCATE OK - realm=%s relay=%s', r.allocate.challengeRealm, r.allocate.relayed);
+    } else if (r.stun.ok) {
+      console.log('[startup-selftest] TURN ALLOCATE FAILED - %s', r.allocate.error);
+      if (/401/.test(r.allocate.error || '')) {
+        console.log('[startup-selftest] HINT: 401 means TURN_SECRET does not match static-auth-secret in /etc/turnserver.conf on the TURN host.');
+      }
+    }
+
+    console.log('[startup] SELF-TEST %s', r.ok ? 'PASSED - relay is usable' : 'FAILED - see hints above');
+  }, 500);
 });
