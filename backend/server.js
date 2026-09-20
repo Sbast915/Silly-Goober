@@ -24,9 +24,13 @@ const TURN_TTL = parseInt(process.env.TURN_TTL || '3600', 10);
 // cert=/pkey= in turnserver.conf, so advertising it by default would hand
 // the browser an endpoint where every candidate silently fails.
 const TURN_TLS_ENABLED = process.env.TURN_TLS === '1';
+// TURN over TCP/443 disguises the traffic as HTTPS by port, which gets
+// through networks that block UDP VoIP. Set TURN_TCP443=0 to drop it.
+const TURN_TCP443 = process.env.TURN_TCP443 !== '0';
 
 const { buildIceServers, makeTurnCredentials } = require('./turn');
 const { runTurnSelfTest } = require('./turn-selftest');
+const { runTurnTcpTest } = require('./turn-selftest-tcp');
 const chat = require('./chat');
 const CHAT_ENABLED = !!process.env.CHAT_API_SECRET;
 
@@ -162,7 +166,8 @@ function getIceServers(logPrefix, label) {
     tlsEnabled: TURN_TLS_ENABLED,
     secret: TURN_SECRET,
     ttlSeconds: TURN_TTL,
-    label: label || 'user'
+    label: label || 'user',
+    tcp443: TURN_TCP443
   });
 
   // Public STUN appended after our own server: harmless, and gives the browser
@@ -419,6 +424,25 @@ server.listen(PORT, () => {
       console.log('[startup-selftest] TURN ALLOCATE FAILED - %s', r.allocate.error);
       if (/401/.test(r.allocate.error || '')) {
         console.log('[startup-selftest] HINT: 401 means TURN_SECRET does not match static-auth-secret in /etc/turnserver.conf on the TURN host.');
+      }
+    }
+
+    // UDP alone is not enough to know the call will work on a restrictive
+    // network, so check the TCP paths too.
+    for (const tcpPort of TURN_TCP443 ? [TURN_PORT, 443] : [TURN_PORT]) {
+      const t = await runTurnTcpTest({
+        host: TURN_HOST, port: tcpPort, realm: TURN_REALM,
+        username: creds.username, credential: creds.credential, timeoutMs: 8000
+      });
+      if (t.ok) {
+        console.log('[startup-selftest] TCP/%d OK - relay=%s', tcpPort, t.allocate.relayed);
+      } else if (!t.tcp.ok) {
+        console.log('[startup-selftest] TCP/%d unreachable - %s', tcpPort, t.tcp.error);
+        if (tcpPort === 443) {
+          console.log('[startup-selftest] HINT: open TCP 443 ingress in the OCI Security List. This is the path that works where UDP VoIP is blocked.');
+        }
+      } else {
+        console.log('[startup-selftest] TCP/%d allocate failed - %s', tcpPort, t.allocate.error);
       }
     }
 

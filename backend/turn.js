@@ -38,13 +38,25 @@ function buildIceServers(opts) {
   const tlsPort = opts.tlsPort || 5349;
   const creds = makeTurnCredentials(opts.secret, opts.ttlSeconds, opts.label);
 
+  // Order matters for how quickly a usable candidate is found, but the
+  // browser tries them all, so an unreachable entry costs nothing beyond a
+  // failed check.
+  //
+  // The :443/tcp entry is for networks that block or throttle UDP VoIP
+  // (Saudi ISPs among them). On the server that port is redirected to the
+  // normal listener, so it needs no second coturn instance.
+  const turnUrls = [
+    'turn:' + host + ':' + port + '?transport=udp',
+    'turn:' + host + ':' + port + '?transport=tcp'
+  ];
+  if (opts.tcp443 !== false) {
+    turnUrls.push('turn:' + host + ':443?transport=tcp');
+  }
+
   const iceServers = [
     { urls: 'stun:' + host + ':' + port },
     {
-      urls: [
-        'turn:' + host + ':' + port + '?transport=udp',
-        'turn:' + host + ':' + port + '?transport=tcp'
-      ],
+      urls: turnUrls,
       username: creds.username,
       credential: creds.credential
     }
