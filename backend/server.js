@@ -373,6 +373,39 @@ io.on('connection', (socket) => {
     socket.to(ROOM).emit('media-state', payload);
   });
 
+  // Which of a peer's streams is a screen share. Stream ids are the only
+  // handle both sides agree on, so the sharer announces its id here and
+  // the receiver routes that stream to the screen tile.
+  socket.on('screen-share', (payload) => {
+    if (!assertParticipant(socket)) return;
+    const on = !!(payload && payload.on);
+    socket.to(ROOM).emit('screen-share', {
+      on,
+      streamId: on ? String((payload && payload.streamId) || '').slice(0, 128) : null,
+      audio: !!(payload && payload.audio)
+    });
+  });
+
+  // Typing indicator. Deliberately not persisted - it is ephemeral by
+  // nature and storing it would only add writes for nothing.
+  socket.on('chat-typing', (payload) => {
+    if (!assertParticipant(socket)) return;
+    socket.to(ROOM).emit('chat-typing', {
+      sender: String((payload && payload.sender) || '').slice(0, 32),
+      typing: !!(payload && payload.typing)
+    });
+  });
+
+  // Read receipts: the reader reports the newest message timestamp it has
+  // actually seen, and the sender marks everything up to it.
+  socket.on('chat-seen', (payload) => {
+    if (!assertParticipant(socket)) return;
+    socket.to(ROOM).emit('chat-seen', {
+      sender: String((payload && payload.sender) || '').slice(0, 32),
+      upTo: Number(payload && payload.upTo) || 0
+    });
+  });
+
   socket.on('signal', (payload) => {
     if (!assertParticipant(socket)) return;
     console.log('[sig] relay signal type=%s from=%s', payload && payload.type, socket.id);

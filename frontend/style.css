@@ -18,6 +18,14 @@
      - .dc-empty-state / .dc-ctrl-btn / .dc-setting-row (this round)
 
    This one !important rule ends the whole family. Do not remove it.
+
+   RELATED TRAP, same root cause (equal specificity + source order), but
+   NOT fixed by the rule below: the phone @media block further down used
+   a bare `.dc-tile` selector while the base `.dc-tile` rule appears
+   later in this file. Equal specificity, later wins, so every phone-only
+   tile rule was dead. It is now scoped as `.dc-stage .dc-tile`. When you
+   add a rule inside a media query, check nothing with the same
+   specificity redefines it further down.
    ============================================================ */
 [hidden] { display: none !important; }
 
@@ -204,7 +212,18 @@ body {
     padding: 12px;
     gap: 10px;
   }
-  .dc-tile {
+  /* CASCADE ORDER TRAP - measured, not guessed.
+     This used to be a bare `.dc-tile` selector, specificity (0,1,0). The
+     base `.dc-tile { flex: 1 1 260px; aspect-ratio: 16/10 }` rule below
+     has the SAME specificity and appears LATER in this file, so it won
+     every time and this whole block was silently dead: on a phone the
+     tiles kept their desktop 16:10 basis, which is why a third tile got
+     squeezed to a ~40px sliver. Measured flex-basis was 260px here, not
+     the 0 this block asks for.
+     Scoping with .dc-stage takes it to (0,2,0), so it wins on
+     specificity and no longer depends on source order. Same family of
+     bug as the [hidden] guard at the top - do not un-scope it. */
+  .dc-stage .dc-tile {
     width: 100%;
     /* Split the stage height evenly. aspect-ratio must be released here:
        in a column flexbox, flex-shrink wins over aspect-ratio, which
@@ -215,18 +234,22 @@ body {
     aspect-ratio: auto;
     max-height: none;
   }
-  /* The focused/PiP pair must not inherit the stacked sizing. */
-  .dc-stage.dc-focus-local #tile-remote,
-  .dc-stage.dc-focus-remote #tile-local {
+  /* The focused/PiP tiles must not inherit the stacked sizing. */
+  .dc-stage .dc-tile.dc-pip {
     flex: none;
-    width: 130px;
-    height: 96px;
+    width: 112px;
+    height: 84px;
   }
-  .dc-stage.dc-focus-local #tile-local,
-  .dc-stage.dc-focus-remote #tile-remote {
+  .dc-stage .dc-tile.dc-focused {
     flex: 1 1 auto;
     height: 100%;
+    width: 100%;
   }
+  /* A focused tile on a phone should use the whole stage, so the stage
+     drops its own padding while one is expanded. Without this the
+     "expanded" video still sat inside a 12px frame on every side, which
+     is what made it look like it never quite fit the screen. */
+  .dc-stage.dc-has-focus { padding: 0; }
 }
 
 .dc-empty-state {
@@ -331,17 +354,18 @@ body {
 .dc-tile-expand:hover, .dc-tile-shrink:hover { background: rgba(0,0,0,0.9); }
 .dc-tile-expand:active, .dc-tile-shrink:active { transform: scale(0.92); }
 
-/* ---- Focus mode: one tile fills, other is PiP ---- */
-.dc-stage.dc-focus-local #tile-local,
-.dc-stage.dc-focus-remote #tile-remote {
+/* ---- Focus mode: one tile fills, the others become PiPs ----
+   Keyed on classes the JS puts on each tile (.dc-focused / .dc-pip)
+   rather than on tile IDs. With a screen share now getting its own tile
+   there can be three of them, and ID-pair rules do not scale to that. */
+.dc-tile.dc-focused {
   flex: 1 1 auto;
   max-width: none;
   width: 100%;
   height: 100%;
   aspect-ratio: auto;
 }
-.dc-stage.dc-focus-local #tile-remote,
-.dc-stage.dc-focus-remote #tile-local {
+.dc-tile.dc-pip {
   position: absolute;
   bottom: 20px;
   right: 20px;
@@ -360,8 +384,12 @@ body {
   -webkit-user-select: none;
   user-select: none;
 }
-.dc-stage.dc-focus-local #tile-remote.dc-pip-dragging,
-.dc-stage.dc-focus-remote #tile-local.dc-pip-dragging {
+/* Two PiPs can coexist (e.g. focus the screen, with both faces floating).
+   The second one stacks above the first instead of landing on top of it.
+   ~ is correct rather than +: the tiles are not adjacent siblings once a
+   focused tile sits between them. */
+.dc-tile.dc-pip ~ .dc-tile.dc-pip { bottom: 172px; }
+.dc-tile.dc-pip.dc-pip-dragging {
   cursor: grabbing;
   box-shadow: 0 14px 40px rgba(0,0,0,0.75);
   /* Deliberately NO transform here. A scale() would inflate the element's
@@ -370,13 +398,13 @@ body {
   transition: none;   /* follow the finger/pointer with no lag */
 }
 @media (max-width: 640px) {
-  .dc-stage.dc-focus-local #tile-remote,
-  .dc-stage.dc-focus-remote #tile-local {
-    width: 130px;
-    height: 96px;
+  .dc-tile.dc-pip {
+    width: 112px;
+    height: 84px;
     bottom: 14px;
     right: 14px;
   }
+  .dc-tile.dc-pip ~ .dc-tile.dc-pip { bottom: 106px; }
 }
 
 /* ---- Status bar ---- */
@@ -733,11 +761,10 @@ body.is-observer #call-btn:hover { background: rgba(255,255,255,0.06); }
   box-shadow: 0 4px 12px rgba(0,0,0,0.35);
 }
 /* PiP-sized tiles: shrink the avatar so it doesn't overflow */
-.dc-stage.dc-focus-local #tile-remote .dc-avatar-circle,
-.dc-stage.dc-focus-remote #tile-local .dc-avatar-circle {
-  width: 56px; height: 56px;
-  min-width: 56px; min-height: 56px;
-  font-size: 22px;
+.dc-tile.dc-pip .dc-avatar-circle {
+  width: 44px; height: 44px;
+  min-width: 44px; min-height: 44px;
+  font-size: 18px;
 }
 
 /* ---- Name prompt (post-unlock) ---- */
@@ -870,13 +897,14 @@ body.is-observer #call-btn:hover { background: rgba(255,255,255,0.06); }
   }
 
   /* Keep the PiP proportionate to the smaller stage. */
-  .dc-stage.dc-focus-local #tile-remote,
-  .dc-stage.dc-focus-remote #tile-local {
+  .dc-tile.dc-pip {
     width: 120px;
     height: 88px;
     bottom: 10px;
     right: 10px;
   }
+  .dc-tile.dc-pip ~ .dc-tile.dc-pip { bottom: 106px; }
+  .dc-stage.dc-has-focus { padding: 0; }
 }
 
 /* ============================================================
@@ -1084,8 +1112,17 @@ body.is-observer #call-btn:hover { background: rgba(255,255,255,0.06); }
 
 .dc-tile.dc-sharing { box-shadow: 0 0 0 2px #23a559; }
 /* Screen content is not a camera frame, so it must not be mirrored and
-   must not be cropped - you want to read it, not fill the tile. */
+   must not be cropped - you want to read it, not fill the tile.
+   This rule CAN win here, unlike on the camera tiles, precisely because
+   nothing writes objectFit inline on #screen-video: applyFitMode
+   deliberately skips it. See the note in applyFitMode. */
+.dc-tile-screen video,
 .dc-tile.dc-sharing video { transform: none !important; object-fit: contain; }
+
+/* A screen is usually 16:9 and always wider than a face, so the screen
+   tile gets more room than the camera tiles when all three are shown. */
+.dc-tile-screen { flex: 1.6 1 320px; }
+.dc-ctrl-btn.dc-ctrl-unavailable { opacity: 0.4; cursor: not-allowed; }
 
 .dc-share-badge {
   position: absolute; top: 10px; left: 10px; z-index: 3;
@@ -1094,4 +1131,212 @@ body.is-observer #call-btn:hover { background: rgba(255,255,255,0.06); }
   padding: 4px 8px; border-radius: 5px;
   display: flex; align-items: center; gap: 5px;
   pointer-events: none;
+}
+
+/* ============================================================
+   Fullscreen button (real Fullscreen API, not the in-page expand)
+   Scoped with :not([hidden]) for the same reason as the expand/shrink
+   pair above - see the GLOBAL [hidden] GUARD note at the top.
+   ============================================================ */
+.dc-tile-fs:not([hidden]) {
+  position: absolute;
+  top: 10px;
+  right: 52px;          /* sits left of the expand/shrink button */
+  width: 34px; height: 34px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(30,31,34,0.7);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 120ms ease, transform 100ms ease;
+  z-index: 3;
+  backdrop-filter: blur(6px);
+  -webkit-tap-highlight-color: transparent;
+}
+.dc-tile-fs:hover { background: rgba(0,0,0,0.9); }
+.dc-tile-fs:active { transform: scale(0.92); }
+/* A PiP is too small for three buttons; fullscreening a thumbnail is not
+   a thing anyone wants anyway. */
+.dc-tile.dc-pip .dc-tile-fs { display: none !important; }
+
+/* When a tile IS the fullscreen element it must fill the screen exactly.
+   The tile normally carries a border-radius and an aspect-ratio from the
+   grid, both of which would letterbox it against the black backdrop. */
+.dc-tile:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  max-height: none;
+  border-radius: 0;
+  aspect-ratio: auto;
+  background: #000;
+}
+.dc-tile:fullscreen video { width: 100%; height: 100%; }
+/* A camera in fullscreen should fill the display; a shared screen must
+   still never be cropped. */
+.dc-tile-local:fullscreen video,
+.dc-tile-remote:fullscreen video { object-fit: cover; }
+.dc-tile-screen:fullscreen video { object-fit: contain; }
+/* WebKit needs the prefixed pseudo-class spelled out separately: an
+   unrecognised selector invalidates the whole rule, so these cannot be
+   merged into the group above. */
+.dc-tile:-webkit-full-screen {
+  width: 100vw; height: 100vh;
+  max-width: none; max-height: none;
+  border-radius: 0; aspect-ratio: auto; background: #000;
+}
+
+/* ============================================================
+   Peer in landscape
+   Their phone turned sideways, so their frame is wide. Letterbox that
+   one tile rather than cropping most of it away. The object-fit itself
+   is set inline by applyPeerOrientation, because applyFitMode also
+   writes it inline and a stylesheet rule could never beat that.
+   ============================================================ */
+.dc-tile.dc-peer-landscape { background: #000; }
+
+/* ============================================================
+   Chat: day separators, receipts, typing indicator, toasts
+   ============================================================ */
+.dc-day-sep {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 10px 0 6px;
+}
+.dc-day-sep span {
+  font-size: 11px;
+  font-weight: 600;
+  color: #949ba4;
+  background: rgba(0,0,0,0.25);
+  padding: 3px 10px;
+  border-radius: 10px;
+}
+
+.dc-msg-time { display: flex; align-items: center; gap: 4px; }
+.dc-msg-mine .dc-msg-time { justify-content: flex-end; }
+.dc-msg-ticks { font-size: 11px; line-height: 1; letter-spacing: -1px; }
+.dc-msg-seen .dc-msg-ticks { color: #00a8fc; }
+
+.dc-typing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 14px 8px;
+  font-size: 12px;
+  color: #949ba4;
+}
+.dc-typing-dots { display: inline-flex; gap: 3px; }
+.dc-typing-dots i {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: #949ba4;
+  animation: dc-typing-bounce 1.2s infinite ease-in-out;
+}
+.dc-typing-dots i:nth-child(2) { animation-delay: 0.15s; }
+.dc-typing-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes dc-typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.45; }
+  30%           { transform: translateY(-4px); opacity: 1; }
+}
+
+.dc-toasts {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;   /* the strip is not clickable, the toasts are */
+}
+.dc-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 280px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(43,45,49,0.97);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  color: #dbdee1;
+  cursor: pointer;
+  animation: dc-toast-in 200ms ease-out;
+}
+.dc-toast:hover { background: rgba(53,55,60,0.99); }
+.dc-toast-out { animation: dc-toast-out 200ms ease-in forwards; }
+.dc-toast-avatar {
+  width: 32px; height: 32px;
+  min-width: 32px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; color: #fff;
+}
+.dc-toast-body { min-width: 0; }
+.dc-toast-who { font-size: 13px; font-weight: 600; color: #fff; }
+.dc-toast-text {
+  font-size: 12px;
+  color: #b5bac1;
+  /* One line, clipped - a toast is a nudge, not the message. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@keyframes dc-toast-in  { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@keyframes dc-toast-out { to   { opacity: 0; transform: translateX(16px); } }
+
+@media (max-width: 640px) {
+  .dc-toasts { top: 56px; right: 10px; left: 10px; }
+  .dc-toast { width: auto; }
+}
+
+/* ============================================================
+   Tiled stage layout, driven by data-tiles on .dc-stage
+   The default .dc-tile sizing (fixed 16/10 aspect, centred) left large
+   dead bands above and below once there were three tiles - the video
+   ended up small in the middle of a mostly empty stage. These rules make
+   the tiles use the space instead. They apply only when no tile is
+   focused; focus mode has its own layout above.
+   ============================================================ */
+@media (min-width: 641px) {
+  /* Two tiles: stretch to the stage height rather than sitting centred. */
+  .dc-stage[data-tiles="2"]:not(.dc-has-focus) { align-items: stretch; }
+  .dc-stage[data-tiles="2"]:not(.dc-has-focus) > .dc-tile {
+    aspect-ratio: auto;
+    max-width: none;
+    height: auto;
+  }
+
+  /* Three tiles: a shared screen is the thing being read, so it gets a
+     tall column of its own and the two faces stack beside it. */
+  .dc-stage[data-tiles="3"]:not(.dc-has-focus) {
+    display: grid;
+    grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: stretch;
+  }
+  .dc-stage[data-tiles="3"]:not(.dc-has-focus) > .dc-tile {
+    aspect-ratio: auto;
+    max-width: none;
+    width: auto;
+    height: auto;
+    min-height: 0;
+  }
+  .dc-stage[data-tiles="3"]:not(.dc-has-focus) > .dc-tile-screen { grid-column: 1; grid-row: 1 / span 2; }
+  .dc-stage[data-tiles="3"]:not(.dc-has-focus) > .dc-tile-remote { grid-column: 2; grid-row: 1; }
+  .dc-stage[data-tiles="3"]:not(.dc-has-focus) > .dc-tile-local  { grid-column: 2; grid-row: 2; }
+}
+
+@media (max-width: 640px) {
+  /* Stacked on a phone, but a screen needs more of the height than a face
+     does - an even three-way split makes the screen unreadable. */
+  .dc-stage[data-tiles="3"]:not(.dc-has-focus) > .dc-tile-screen { flex: 2 1 0; }
+  /* A focused tile fills edge to edge, so a rounded corner would just
+     show a sliver of stage background at each corner. */
+  .dc-stage.dc-has-focus > .dc-tile.dc-focused { border-radius: 0; }
 }
