@@ -31,6 +31,10 @@ const TURN_TCP443 = process.env.TURN_TCP443 !== '0';
 const { buildIceServers, makeTurnCredentials } = require('./turn');
 const { runTurnSelfTest } = require('./turn-selftest');
 const { runTurnTcpTest } = require('./turn-selftest-tcp');
+const metered = require('./metered');
+// TEMPORARY: prefer Metered while we chase the Saudi-network problem.
+// Set PREFER_METERED=0 to go straight back to our own coturn.
+const PREFER_METERED = process.env.PREFER_METERED !== '0';
 const chat = require('./chat');
 const CHAT_ENABLED = !!process.env.CHAT_API_SECRET;
 
@@ -153,7 +157,15 @@ const PUBLIC_STUN = [
   { urls: 'stun:stun1.l.google.com:19302' }
 ];
 
-function getIceServers(logPrefix, label) {
+async function getIceServers(logPrefix, label) {
+  // Metered first while PREFER_METERED is on; it can offer turns: on 443
+  // with a browser-trusted cert, which our coturn cannot.
+  if (PREFER_METERED && metered.configured()) {
+    const m = await metered.getIceServers(logPrefix + '[metered]');
+    if (m) return { iceServers: m, source: 'metered' };
+    console.log('%s metered failed - falling back to self-hosted coturn', logPrefix);
+  }
+
   if (!TURN_SECRET) {
     console.log('%s TURN_SECRET is UNSET - serving public STUN only. Calls across strict NATs WILL fail.', logPrefix);
     return { iceServers: PUBLIC_STUN, source: 'stun-only' };
@@ -179,7 +191,7 @@ function getIceServers(logPrefix, label) {
 }
 
 
-app.post('/api/session', (req, res) => {
+app.post('/api/session', async (req, res) => {
   const token = tokenFromReq(req);
   const rec = token && tokens.get(token);
   if (!rec || rec.expires < Date.now()) {
@@ -188,7 +200,7 @@ app.post('/api/session', (req, res) => {
 
   // Credentials are derived per-request and expire on their own, so there is
   // nothing to cache and no upstream API that can rate-limit or go down.
-  const result = getIceServers('[ice]', 'web');
+  const result = await getIceServers('[ice]', 'web');
   console.log('[ice] serving source=%s servers=%d', result.source, result.iceServers.length);
   res.json({
     ok: true,
@@ -390,8 +402,23 @@ server.listen(PORT, () => {
     TURN_HOST, TURN_PORT, TURN_REALM, TURN_TLS_ENABLED
   );
 
+  console.log('[startup] ICE preference: %s (metered configured=%s app=%s secretKey=%s)',
+    PREFER_METERED && metered.configured() ? 'METERED first' : 'self-hosted coturn',
+    metered.configured(), metered.APP || '(unset)', metered.hasSecretKey);
+
+  if (PREFER_METERED) {
+    // Prove the Metered path works now, not on the first real call.
+    getIceServers('[startup-metered]', 'selftest').then((r) => {
+      console.log('[startup] ICE source that will be served: %s (%d servers)', r.source, r.iceServers.length);
+      if (r.source === 'metered') {
+        const hasTls = JSON.stringify(r.iceServers).indexOf('turns:') !== -1;
+        console.log('[startup] metered includes turns:// (TLS 443, best vs DPI): %s', hasTls);
+      }
+    }).catch((e) => console.log('[startup] ICE check threw: %s', e && e.message));
+  }
+
   if (!TURN_SECRET) {
-    console.log('[startup] TURN_SECRET is UNSET - no relay will be offered. Set it to the static-auth-secret from /etc/turnserver.conf.');
+    console.log('[startup] TURN_SECRET is UNSET - coturn fallback unavailable.');
     return;
   }
 
