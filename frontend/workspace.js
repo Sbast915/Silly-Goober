@@ -19,7 +19,8 @@
     send: '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>',
     image: '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5z"/></svg>',
     micNote: '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>',
-    person: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2c-4 0-9 2-9 5v3h18v-3c0-3-5-5-9-5z"/></svg>'
+    person: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2c-4 0-9 2-9 5v3h18v-3c0-3-5-5-9-5z"/></svg>',
+    screen: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M20 3H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h6v2H8v2h8v-2h-2v-2h6a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 13H4V5h16v11z"/></svg>'
   };
 
   callView.innerHTML =
@@ -60,6 +61,7 @@
     '    <video id="local-video" autoplay playsinline muted></video>' +
     '    <div class="dc-tile-avatar" id="local-avatar-overlay"><div class="dc-avatar-circle" id="local-avatar-circle">?</div></div>' +
     '    <div class="dc-tile-label" id="local-tile-label">You</div>' +
+    '    <div class="dc-share-badge" id="share-badge" hidden>SHARING SCREEN</div>' +
     '    <button type="button" class="dc-tile-expand" id="expand-local-btn" title="Expand" aria-label="Expand your tile">' + ICONS.expand + '</button>' +
     '    <button type="button" class="dc-tile-shrink" id="shrink-local-btn" title="Shrink" aria-label="Shrink your tile" hidden>' + ICONS.shrink + '</button>' +
     '  </div>' +
@@ -96,6 +98,7 @@
     '<div class="dc-controls">' +
     '  <button class="dc-ctrl-btn" id="mute-btn" title="Mute">' + ICONS.mic + '</button>' +
     '  <button class="dc-ctrl-btn" id="camera-btn" title="Camera off">' + ICONS.cam + '</button>' +
+    '  <button class="dc-ctrl-btn" id="share-btn" title="Share screen">' + ICONS.screen + '</button>' +
     '  <button class="dc-ctrl-btn dc-ctrl-primary" id="call-btn" title="Call">' + ICONS.call + '</button>' +
     '  <button class="dc-ctrl-btn dc-ctrl-danger" id="end-btn" title="Hang up" hidden>' + ICONS.hangup + '</button>' +
     '</div>' +
@@ -170,6 +173,8 @@
   var remoteTileLabel = document.getElementById('remote-tile-label');
   var localAvatarCircle = document.getElementById('local-avatar-circle');
   var remoteAvatarCircle = document.getElementById('remote-avatar-circle');
+  var shareBtn = document.getElementById('share-btn');
+  var shareBadge = document.getElementById('share-badge');
   var presenceList = document.getElementById('presence-list');
   var presenceListItems = document.getElementById('presence-list-items');
   var incomingAvatar = document.getElementById('incoming-avatar');
@@ -860,6 +865,26 @@
       li.appendChild(av);
       li.appendChild(nm);
       li.appendChild(badge);
+
+      // Safety net for a session the automatic takeover did not catch.
+      if (!isMe) {
+        var kick = document.createElement('button');
+        kick.type = 'button';
+        kick.className = 'dc-presence-item-kick';
+        kick.textContent = '✕';
+        kick.title = 'Disconnect this session';
+        kick.setAttribute('aria-label', 'Disconnect ' + p.name);
+        kick.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          var ok = window.confirm('Disconnect the session "' + p.name +
+            '"? Use this only if a stale session is stuck.');
+          if (!ok) return;
+          log('kick requested for', p.id, p.name);
+          socket.emit('kick', { id: p.id });
+        });
+        li.appendChild(kick);
+      }
+
       presenceListItems.appendChild(li);
     });
 
@@ -1558,6 +1583,245 @@
       log('profile switched to', p.id);
     });
   });
+
+  // ---------- Session replaced by a newer one ----------
+  // The server evicts an older socket when the same identity reconnects.
+  // Say so plainly instead of leaving a tab that silently stopped working.
+  socket.on('session-replaced', function (msg) {
+    var reason = (msg && msg.reason) || 'replaced by a newer session';
+    log('session replaced:', reason);
+    // socket.io does not auto-reconnect after a server-side disconnect, but
+    // be explicit so this tab cannot race the new one for the identity.
+    try { socket.disconnect(); } catch (e) {}
+    try { if (localStream) localStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+
+    var el = document.createElement('div');
+    el.className = 'dc-replaced';
+    el.innerHTML =
+      '<div class="dc-replaced-card">' +
+      '  <div class="dc-replaced-title">Session taken over</div>' +
+      '  <div class="dc-replaced-body">This tab was ' + reason +
+      '. Only one session per person can be active at a time.</div>' +
+      '  <button type="button">Back to notes</button>' +
+      '</div>';
+    document.body.appendChild(el);
+    el.querySelector('button').addEventListener('click', function () {
+      window.location.reload();
+    });
+  });
+
+  // ---------- Per-participant local volume ----------
+  // Purely local playback level: it changes the <audio>/<video> element's
+  // volume and sends nothing over the connection.
+  var VOLUME_KEY = 'notes.volume.peer';
+  var peerVolume = 1;
+  try {
+    var savedVol = parseFloat(localStorage.getItem(VOLUME_KEY));
+    if (!isNaN(savedVol) && savedVol >= 0 && savedVol <= 1) peerVolume = savedVol;
+  } catch (e) {}
+
+  function applyPeerVolume(v) {
+    peerVolume = Math.max(0, Math.min(1, v));
+    remoteAudio.volume = peerVolume;
+    // The video element carries the same stream; keep it in step so the
+    // level does not depend on which element the browser actually plays.
+    try { remoteVideo.volume = peerVolume; } catch (e) {}
+    try { localStorage.setItem(VOLUME_KEY, String(peerVolume)); } catch (e) {}
+  }
+  applyPeerVolume(peerVolume);
+
+  var volumePopover = null;
+  function closeVolumePopover() {
+    if (!volumePopover) return;
+    volumePopover.remove();
+    volumePopover = null;
+    document.removeEventListener('pointerdown', onOutsideVolume, true);
+  }
+  function onOutsideVolume(e) {
+    if (volumePopover && !volumePopover.contains(e.target)) closeVolumePopover();
+  }
+
+  function openVolumePopover(x, y) {
+    closeVolumePopover();
+    var pop = document.createElement('div');
+    pop.className = 'dc-volume';
+    pop.innerHTML =
+      '<div class="dc-volume-title"><span id="vol-name"></span>' +
+      '<span class="dc-volume-value" id="vol-val"></span></div>' +
+      '<input type="range" min="0" max="100" step="1" id="vol-range" />';
+    document.body.appendChild(pop);
+
+    var nameEl = pop.querySelector('#vol-name');
+    var valEl = pop.querySelector('#vol-val');
+    var range = pop.querySelector('#vol-range');
+    nameEl.textContent = peerName + ' volume';
+    range.value = Math.round(peerVolume * 100);
+
+    function paint() {
+      var pct = parseInt(range.value, 10);
+      valEl.textContent = pct === 0 ? 'Muted' : pct + '%';
+      valEl.classList.toggle('dc-volume-muted', pct === 0);
+    }
+    paint();
+    range.addEventListener('input', function () {
+      applyPeerVolume(parseInt(range.value, 10) / 100);
+      paint();
+    });
+
+    // Keep it on screen regardless of where the press landed.
+    var r = pop.getBoundingClientRect();
+    var px = Math.min(Math.max(8, x), window.innerWidth - r.width - 8);
+    var py = Math.min(Math.max(8, y), window.innerHeight - r.height - 8);
+    pop.style.left = px + 'px';
+    pop.style.top = py + 'px';
+
+    volumePopover = pop;
+    // Defer so the press that opened it does not immediately close it.
+    setTimeout(function () {
+      document.addEventListener('pointerdown', onOutsideVolume, true);
+    }, 0);
+  }
+
+  // Desktop: right-click. Mobile: long-press. Only on the remote tile -
+  // your own playback is muted on purpose to avoid echo, so a slider there
+  // would do nothing.
+  tileRemote.addEventListener('contextmenu', function (e) {
+    if (!hasRemoteMedia) return;
+    e.preventDefault();
+    openVolumePopover(e.clientX, e.clientY);
+  });
+
+  var pressTimer = 0, pressX = 0, pressY = 0;
+  tileRemote.addEventListener('pointerdown', function (e) {
+    if (!hasRemoteMedia) return;
+    if (e.target.closest && e.target.closest('.dc-tile-expand, .dc-tile-shrink')) return;
+    pressX = e.clientX; pressY = e.clientY;
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(function () { openVolumePopover(pressX, pressY); }, 550);
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach(function (evt) {
+    tileRemote.addEventListener(evt, function () { clearTimeout(pressTimer); });
+  });
+  tileRemote.addEventListener('pointermove', function (e) {
+    // A drag is not a long-press.
+    if (Math.abs(e.clientX - pressX) > 10 || Math.abs(e.clientY - pressY) > 10) clearTimeout(pressTimer);
+  });
+
+  // Re-apply the chosen level whenever a new remote stream arrives.
+  socket.on('peer-joined', function () { applyPeerVolume(peerVolume); });
+
+  // ---------- Screen sharing ----------
+  var isSharing = false;
+  var screenStream = null;
+  var cameraTrack = null;   // the camera track we set aside while sharing
+
+  function videoSender() {
+    if (!pc) return null;
+    return pc.getSenders().find(function (s) { return s.track && s.track.kind === 'video'; }) || null;
+  }
+
+  function setSharingUI(on) {
+    isSharing = on;
+    shareBtn.classList.toggle('dc-ctrl-sharing', on);
+    shareBtn.title = on ? 'Stop sharing' : 'Share screen';
+    tileLocal.classList.toggle('dc-sharing', on);
+    shareBadge.hidden = !on;
+    localTileLabel.textContent = on ? (myName + ' - sharing') : myName;
+
+    // applyFitMode writes objectFit as an inline style, which beats any
+    // stylesheet rule, so the CSS alone cannot force 'contain' here. A
+    // shared screen must never be cropped - you need to read it - so set
+    // it inline while sharing and hand control back afterwards.
+    if (on) {
+      localVideo.style.objectFit = 'contain';
+    } else {
+      var saved = 'cover';
+      try { saved = localStorage.getItem(FIT_KEY) || 'cover'; } catch (e) {}
+      applyFitMode(saved);
+    }
+  }
+
+  async function startScreenShare() {
+    if (isSharing) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+      setStatus('Screen sharing not supported here', 'error');
+      return;
+    }
+    var stream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    } catch (err) {
+      // Cancelling the OS picker lands here (NotAllowedError/AbortError).
+      // Nothing was changed yet, so just leave the UI exactly as it was.
+      log('screen share cancelled or refused:', err && err.name);
+      return;
+    }
+
+    var track = stream.getVideoTracks()[0];
+    if (!track) { log('getDisplayMedia returned no video track'); return; }
+
+    screenStream = stream;
+    var sender = videoSender();
+    if (sender) {
+      cameraTrack = sender.track;          // keep it alive to restore later
+      await sender.replaceTrack(track);    // no renegotiation needed
+    } else {
+      // Not in a call yet: still preview it locally so the button does
+      // something predictable.
+      cameraTrack = localStream ? localStream.getVideoTracks()[0] : null;
+    }
+
+    localVideo.srcObject = stream;
+    setSharingUI(true);
+    emitMediaState();
+    log('screen share started');
+
+    // The browser's own "Stop sharing" bar ends the track behind our back.
+    track.addEventListener('ended', function () {
+      log('screen share ended by the browser UI');
+      stopScreenShare();
+    });
+  }
+
+  async function stopScreenShare() {
+    if (!isSharing) return;
+    var sender = videoSender();
+
+    // Prefer the camera track we set aside; if it died, ask for a fresh one.
+    var restore = cameraTrack;
+    if (!restore || restore.readyState === 'ended') {
+      try {
+        var fresh = await navigator.mediaDevices.getUserMedia({ video: true });
+        restore = fresh.getVideoTracks()[0];
+        if (localStream) {
+          var old = localStream.getVideoTracks()[0];
+          if (old) { localStream.removeTrack(old); try { old.stop(); } catch (e) {} }
+          localStream.addTrack(restore);
+        }
+      } catch (err) {
+        log('could not restore camera:', err && err.message);
+        restore = null;
+      }
+    }
+
+    if (sender && restore) { try { await sender.replaceTrack(restore); } catch (e) { log('replaceTrack back failed', e && e.message); } }
+    try { if (screenStream) screenStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+    screenStream = null;
+    cameraTrack = null;
+
+    if (localStream) localVideo.srcObject = localStream;
+    setSharingUI(false);
+    emitMediaState();
+    log('screen share stopped, camera restored');
+  }
+
+  shareBtn.addEventListener('click', function () {
+    if (isSharing) stopScreenShare(); else startScreenShare();
+  });
+
+  // Sharing must not survive the call ending.
+  socket.on('call-end', function () { if (isSharing) stopScreenShare(); });
+  socket.on('peer-left', function () { if (isSharing) stopScreenShare(); });
 
   setCallState('idle');
   initMedia();

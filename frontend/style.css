@@ -1012,3 +1012,86 @@ body.is-observer #call-btn:hover { background: rgba(255,255,255,0.06); }
   .dc-chat:not([hidden]) { width: min(320px, 60%); }
   .dc-chat-header { height: 34px; }
 }
+
+/* ============================================================
+   Session replaced notice
+   ============================================================ */
+.dc-replaced:not([hidden]) {
+  position: fixed; inset: 0; z-index: 60;
+  background: #1e1f22;
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; text-align: center;
+  font-family: "gg sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+}
+.dc-replaced-card {
+  background: #2b2d31; border-radius: 14px; padding: 32px 28px;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  max-width: 340px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.dc-replaced-title { font-size: 17px; font-weight: 600; color: #dbdee1; }
+.dc-replaced-body { font-size: 13px; color: #949ba4; line-height: 1.5; }
+.dc-replaced-card button {
+  padding: 10px 18px; border: none; border-radius: 6px;
+  background: #5865f2; color: #fff; font-size: 14px; font-weight: 500;
+  cursor: pointer; font-family: inherit;
+}
+.dc-replaced-card button:hover { background: #4752c4; }
+
+/* ---- kick button in the presence list ---- */
+.dc-presence-item-kick {
+  border: none; background: none; cursor: pointer;
+  color: #949ba4; font-size: 14px; line-height: 1;
+  padding: 4px 6px; border-radius: 4px; flex: 0 0 auto;
+  opacity: 0; transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+.dc-presence-item:hover .dc-presence-item-kick { opacity: 1; }
+.dc-presence-item-kick:hover { background: rgba(242,63,67,0.16); color: #f23f43; }
+@media (hover: none), (pointer: coarse) {
+  .dc-presence-item-kick { opacity: 0.7; }
+}
+
+/* ============================================================
+   Per-participant volume popover
+   ============================================================ */
+.dc-volume:not([hidden]) {
+  position: fixed; z-index: 35;
+  background: #1e1f22;
+  border: 1px solid #3a3d44;
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+  min-width: 190px;
+  box-shadow: 0 12px 34px rgba(0,0,0,0.55);
+  font-family: "gg sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  animation: dc-fade 120ms ease-out;
+}
+.dc-volume-title {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.4px;
+  text-transform: uppercase; color: #949ba4;
+  display: flex; justify-content: space-between; gap: 10px;
+}
+.dc-volume-value { color: #dbdee1; }
+.dc-volume input[type=range] {
+  width: 100%; accent-color: #5865f2; cursor: pointer; margin: 0;
+}
+.dc-volume-muted { color: #f23f43; }
+
+/* ============================================================
+   Screen sharing
+   ============================================================ */
+.dc-ctrl-btn.dc-ctrl-sharing { background: #23a559; color: #fff; }
+.dc-ctrl-btn.dc-ctrl-sharing:hover { background: #1e8f4d; }
+
+.dc-tile.dc-sharing { box-shadow: 0 0 0 2px #23a559; }
+/* Screen content is not a camera frame, so it must not be mirrored and
+   must not be cropped - you want to read it, not fill the tile. */
+.dc-tile.dc-sharing video { transform: none !important; object-fit: contain; }
+
+.dc-share-badge {
+  position: absolute; top: 10px; left: 10px; z-index: 3;
+  background: #23a559; color: #fff;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.3px;
+  padding: 4px 8px; border-radius: 5px;
+  display: flex; align-items: center; gap: 5px;
+  pointer-events: none;
+}

@@ -302,10 +302,69 @@ io.on('connection', (socket) => {
   console.log('[sig] connect id=%s role=%s participants=%d', socket.id,
     isParticipant ? 'participant' : 'observer', callParticipants.size);
 
+  // Drop any other socket already claiming this identity, and free its slot.
+  // A phone that locks, a refresh, or a dropped network leaves a socket the
+  // server has not noticed is dead yet; without this the room fills up with
+  // two copies of the same person and no call can be placed.
+  function evictOtherSessionsNamed(name, keepId, reason) {
+    const wanted = String(name || '').trim().toLowerCase();
+    if (!wanted) return 0;
+    let evicted = 0;
+    for (const [id, info] of Array.from(presence.entries())) {
+      if (id === keepId) continue;
+      if (String(info.name || '').trim().toLowerCase() !== wanted) continue;
+
+      console.log('[sig] evicting stale session id=%s name=%s (%s)', id, info.name, reason);
+      // Remove from tracking BEFORE disconnecting. The stale socket's own
+      // disconnect handler then sees wasParticipant=false and will not fire
+      // a spurious peer-left at the peer who is still here.
+      presence.delete(id);
+      callParticipants.delete(id);
+      const stale = io.sockets.sockets.get(id);
+      if (stale) {
+        stale.emit('session-replaced', { reason: reason });
+        try { stale.leave(ROOM); } catch (e) {}
+        stale.disconnect(true);
+      }
+      evicted++;
+    }
+    return evicted;
+  }
+
   socket.on('hello', (payload) => {
     const name = sanitizeName(payload && payload.name);
     console.log('[sig] hello from=%s name=%s', socket.id, name);
+
+    const evicted = evictOtherSessionsNamed(name, socket.id, 'replaced by a newer session');
     presence.set(socket.id, { name });
+
+    // If evicting freed a slot - or we arrived as an observer because the
+    // stale copy was holding one - claim it now.
+    if (!callParticipants.has(socket.id) && callParticipants.size < 2) {
+      callParticipants.add(socket.id);
+      socket.join(ROOM);
+      socket.emit('role-assigned', { role: 'participant' });
+      console.log('[sig] %s took a participant slot after %d eviction(s)', socket.id, evicted);
+    }
+
+    broadcastPresence();
+  });
+
+  // Manual safety net for a session the automatic takeover did not catch.
+  socket.on('kick', (payload) => {
+    const targetId = payload && payload.id;
+    if (!targetId || targetId === socket.id) return;
+    const target = io.sockets.sockets.get(targetId);
+    const info = presence.get(targetId) || {};
+    console.log('[sig] kick requested by=%s target=%s name=%s', socket.id, targetId, info.name);
+    presence.delete(targetId);
+    callParticipants.delete(targetId);
+    if (target) {
+      target.emit('session-replaced', { reason: 'removed by the other participant' });
+      try { target.leave(ROOM); } catch (e) {}
+      target.disconnect(true);
+    }
+    tryPromoteObserver();
     broadcastPresence();
   });
 
