@@ -368,6 +368,33 @@ io.on('connection', (socket) => {
     broadcastPresence();
   });
 
+  // Per-call outcome reporting. This is what tells us, after the fact,
+  // whether a call went direct or through the relay - the question the
+  // coturn logs could not answer.
+  socket.on('call-stats', (payload) => {
+    if (!assertParticipant(socket)) return;
+    const info = presence.get(socket.id) || {};
+    const who = info.name || socket.id;
+    const p = payload || {};
+
+    if (p.kind === 'selected-pair' && p.pair) {
+      const pr = p.pair;
+      const viaRelay = pr.localType === 'relay' || pr.remoteType === 'relay';
+      console.log('[stats] %s role=%s PAIR %s/%s proto=%s%s %s -> %s rtt=%s iceSource=%s %s',
+        who, p.role,
+        pr.localType, pr.remoteType,
+        pr.protocol,
+        pr.relayProtocol ? '(' + pr.relayProtocol + ')' : '',
+        pr.localAddress || '?', pr.remoteAddress || '?',
+        pr.rtt != null ? (Math.round(pr.rtt * 1000) + 'ms') : '?',
+        p.iceSource,
+        viaRelay ? '*** VIA RELAY ***' : '(direct)');
+    } else if (p.kind === 'ice-outcome') {
+      console.log('[stats] %s role=%s ICE OUTCOME=%s connectionState=%s iceSource=%s',
+        who, p.role, p.outcome, p.connectionState, p.iceSource);
+    }
+  });
+
   socket.on('media-state', (payload) => {
     if (!assertParticipant(socket)) return;
     socket.to(ROOM).emit('media-state', payload);

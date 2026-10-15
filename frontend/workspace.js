@@ -235,6 +235,7 @@
     }
   ];
   var iceServers = FALLBACK_ICE;
+  var iceSourceLabel = 'fallback';
 
   var socket = io({ path: '/api/sync', auth: { token: window.__SESSION_KEY } });
   var localStream = null;
@@ -351,6 +352,7 @@
       startSilentKeepalive();
       setupMediaSession();
       lockLandscape();
+      armIceTimeout();
       // Make sure the remote audio element is explicitly playing - helps
       // browsers count this page as "playing audio" for background purposes.
       try { remoteAudio.play().catch(function () {}); } catch (e) {}
@@ -425,6 +427,7 @@
       var data = await r.json();
       if (data && data.ok && Array.isArray(data.iceServers) && data.iceServers.length) {
         iceServers = data.iceServers;
+        iceSourceLabel = data.source || 'unknown';
         log('ice-config loaded source=', data.source, 'servers=', iceServers.length);
       }
     } catch (err) {
@@ -648,10 +651,26 @@
 
   // ---------- PC ----------
   function createPeerConnection() {
+    // Single choke point for teardown. Three call sites used to assign `pc`
+    // and only endCall() closed the old one, so a reconnect mid-call left a
+    // dead RTCPeerConnection alive: it kept its camera tracks and, worse,
+    // its event handlers kept firing and overwriting the status of the new
+    // connection. Close here and nowhere else has to remember.
+    if (pc) {
+      log('closing previous peer connection before creating a new one');
+      try { pc.close(); } catch (e) {}
+      pc = null;
+    }
+    clearIceTimeout();
+    pcGeneration++;
+    var myGeneration = pcGeneration;
+    // Handlers from an older connection must not touch shared UI state.
+    var isCurrent = function () { return myGeneration === pcGeneration; };
+
     var summary = iceServers.map(function (s) {
       return { urls: s.urls, hasAuth: !!(s.username && s.credential) };
     });
-    log('createPeerConnection iceServers=', JSON.stringify(summary));
+    log('createPeerConnection gen=' + myGeneration + ' iceServers=', JSON.stringify(summary));
     var conn = new RTCPeerConnection({ iceServers: iceServers });
     localCandCount = 0;
     remoteCandCount = 0;
@@ -694,6 +713,7 @@
       log('EVENT icecandidateerror url=', e.url, 'code=', e.errorCode, 'text=', e.errorText);
     };
     conn.oniceconnectionstatechange = function () {
+      if (!isCurrent()) return;
       log('EVENT iceconnectionstatechange ->', conn.iceConnectionState);
       if (conn.iceConnectionState === 'checking') setStatus('Connecting...', 'connecting');
       else if (conn.iceConnectionState === 'connected' || conn.iceConnectionState === 'completed') setStatus('Connected', 'connected');
@@ -703,10 +723,19 @@
     conn.onicegatheringstatechange = function () { log('EVENT icegatheringstatechange ->', conn.iceGatheringState); };
     conn.onsignalingstatechange = function () { log('EVENT signalingstatechange ->', conn.signalingState); };
     conn.onconnectionstatechange = function () {
+      if (!isCurrent()) { log('ignoring state from stale gen', myGeneration); return; }
       log('EVENT connectionstatechange ->', conn.connectionState);
-      if (conn.connectionState === 'connected') setStatus('Connected', 'connected');
-      else if (conn.connectionState === 'failed') setStatus('Connection failed', 'error');
-      else if (conn.connectionState === 'disconnected') setStatus('Disconnected', 'error');
+      if (conn.connectionState === 'connected') {
+        clearIceTimeout();
+        iceRetried = false;
+        setStatus('Connected', 'connected');
+        reportSelectedPair(conn);
+      } else if (conn.connectionState === 'failed') {
+        clearIceTimeout();
+        setStatus('Connection failed', 'error');
+      } else if (conn.connectionState === 'disconnected') {
+        setStatus('Disconnected', 'error');
+      }
     };
     // ---- Renegotiation (perfect negotiation) ----
     // Needed from the moment a screen share adds a second video track: the
@@ -1062,13 +1091,124 @@
     refreshStage();
   }
 
+  // ---------- ICE watchdog + reconnect teardown ----------
+  // A call that signals perfectly but never connects used to sit on
+  // "Connecting..." forever: nothing watched for ICE failing to establish.
+  var ICE_TIMEOUT_MS = 15000;
+  var iceTimer = 0;
+  var iceRetried = false;
+  var pcGeneration = 0;
+
+  function clearIceTimeout() {
+    if (iceTimer) { clearTimeout(iceTimer); iceTimer = 0; }
+  }
+
+  function armIceTimeout() {
+    clearIceTimeout();
+    var gen = pcGeneration;
+    iceTimer = setTimeout(function () {
+      iceTimer = 0;
+      if (gen !== pcGeneration) return;                  // superseded
+      if (!pc) return;
+      var st = pc.connectionState;
+      if (st === 'connected' || st === 'completed') return;
+
+      if (!iceRetried && role === 'caller') {
+        // One ICE restart before giving up. Only the caller does this, so
+        // the two sides cannot both restart and collide.
+        iceRetried = true;
+        log('ICE watchdog: still ' + st + ' after ' + ICE_TIMEOUT_MS + 'ms - retrying with an ICE restart');
+        setStatus('Reconnecting...', 'connecting');
+        tryIceRestart();
+        armIceTimeout();
+      } else {
+        log('ICE watchdog: still ' + st + ' after timeout - giving up');
+        setStatus('Connection failed', 'error');
+        reportIceOutcome('timeout', st);
+      }
+    }, ICE_TIMEOUT_MS);
+  }
+
+  // ---------- Report the selected candidate pair ----------
+  // Tells us whether a call went direct (host/srflx) or through the relay,
+  // which is the question we could not answer after the fact.
+  async function reportSelectedPair(conn) {
+    try {
+      var stats = await conn.getStats();
+      var pairs = [], locals = {}, remotes = {};
+      stats.forEach(function (r) {
+        if (r.type === 'candidate-pair') pairs.push(r);
+        else if (r.type === 'local-candidate') locals[r.id] = r;
+        else if (r.type === 'remote-candidate') remotes[r.id] = r;
+      });
+      var sel = pairs.find(function (p) { return p.nominated && p.state === 'succeeded'; }) ||
+                pairs.find(function (p) { return p.state === 'succeeded'; });
+      if (!sel) { log('no selected candidate pair in stats'); return; }
+
+      var L = locals[sel.localCandidateId] || {};
+      var R = remotes[sel.remoteCandidateId] || {};
+      var info = {
+        localType: L.candidateType || '?',
+        remoteType: R.candidateType || '?',
+        protocol: L.protocol || '?',
+        relayProtocol: L.relayProtocol || null,
+        localAddress: L.address || null,
+        remoteAddress: R.address || null,
+        rtt: sel.currentRoundTripTime || null,
+        bytesSent: sel.bytesSent || 0,
+        bytesReceived: sel.bytesReceived || 0
+      };
+      log('SELECTED PAIR', JSON.stringify(info));
+      socket.emit('call-stats', {
+        kind: 'selected-pair',
+        role: role,
+        iceSource: iceSourceLabel,
+        pair: info
+      });
+    } catch (err) {
+      log('reportSelectedPair failed:', err && err.message);
+    }
+  }
+
+  function reportIceOutcome(outcome, state) {
+    try {
+      socket.emit('call-stats', {
+        kind: 'ice-outcome',
+        role: role,
+        iceSource: iceSourceLabel,
+        outcome: outcome,
+        connectionState: state || (pc && pc.connectionState) || 'none'
+      });
+    } catch (e) {}
+  }
+
+  // ---------- Reconnect teardown ----------
+  // The socket dropping mid-call almost always means the media path died
+  // too. Tear the peer connection down here so the re-dial starts clean
+  // instead of reusing or orphaning a dead one.
+  socket.on('disconnect', function (reason) {
+    log('socket disconnect reason=', reason, 'callState=', callState);
+    clearIceTimeout();
+    if (pc) {
+      log('tearing down peer connection after socket drop');
+      try { pc.close(); } catch (e) {}
+      pc = null;
+      pcGeneration++;          // invalidate the dead connection's handlers
+    }
+    pendingCandidates = [];
+    hasRemoteMedia = false;
+    if (callState === 'in-call' || callState === 'calling') {
+      setStatus('Reconnecting...', 'connecting');
+      refreshStage();
+    }
+  });
+
   // ---------- Signaling ----------
   socket.on('connect', function () {
     log('socket connected id=', socket.id);
     socket.emit('hello', { name: myName });
   });
   socket.on('connect_error', function (err) { log('socket connect_error', err && err.message); });
-  socket.on('disconnect', function (r) { log('socket disconnect reason=', r); });
 
   socket.on('call-request', function (msg) {
     var fromId = msg && msg.fromId;
