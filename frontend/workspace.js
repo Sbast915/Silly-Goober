@@ -23,7 +23,11 @@
     image: '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M21 19V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2zM8.5 13.5l2.5 3 3.5-4.5 4.5 6H5l3.5-4.5z"/></svg>',
     micNote: '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>',
     person: '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2c-4 0-9 2-9 5v3h18v-3c0-3-5-5-9-5z"/></svg>',
-    screen: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M20 3H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h6v2H8v2h8v-2h-2v-2h6a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 13H4V5h16v11z"/></svg>'
+    screen: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M20 3H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h6v2H8v2h8v-2h-2v-2h6a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2zm0 13H4V5h16v11z"/></svg>',
+    lock: '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><path d="M18 8h-1V6a5 5 0 0 0-10 0v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zM9 6a3 3 0 1 1 6 0v2H9V6zm3 12a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>',
+    lockBig: '<svg viewBox="0 0 24 24" width="38" height="38" fill="currentColor"><path d="M18 8h-1V6a5 5 0 0 0-10 0v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2zM9 6a3 3 0 1 1 6 0v2H9V6zm3 12a2 2 0 1 1 0-4 2 2 0 0 1 0 4z"/></svg>',
+    micSmall: '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 1 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/></svg>',
+    micOffSmall: '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M19 11h-1.7c0 .74-.16 1.43-.43 2.05l1.23 1.23c.56-.98.9-2.1.9-3.28zM4.27 3L3 4.27l6 6V11a3 3 0 0 0 4.53 2.58l1.09 1.09c-.5.29-1.05.5-1.62.6V19h2v-3.72c.53-.09 1.05-.24 1.53-.44l3.7 3.71 1.27-1.27L4.27 3zM12 3a3 3 0 0 0-3 3v.18l6 6V6a3 3 0 0 0-3-3z"/></svg>'
   };
 
   callView.innerHTML =
@@ -100,6 +104,15 @@
     '    <select id="speaker-select"></select>' +
     '  </div>' +
     '  <div class="dc-setting-row">' +
+    '    <label for="autolock-select">Auto-lock during calls</label>' +
+    '    <select id="autolock-select">' +
+    '      <option value="0">Off</option>' +
+    '      <option value="5">After 5 seconds</option>' +
+    '      <option value="10">After 10 seconds</option>' +
+    '      <option value="30">After 30 seconds</option>' +
+    '    </select>' +
+    '  </div>' +
+    '  <div class="dc-setting-row">' +
     '    <label for="fit-select">Video fit</label>' +
     '    <select id="fit-select">' +
     '      <option value="cover">Fill tile (crop edges)</option>' +
@@ -118,6 +131,7 @@
     '  <button class="dc-ctrl-btn" id="camera-btn" title="Camera off">' + ICONS.cam + '</button>' +
     '  <button class="dc-ctrl-btn" id="share-btn" title="Share screen">' + ICONS.screen + '</button>' +
     '  <button class="dc-ctrl-btn dc-ctrl-primary" id="call-btn" title="Call">' + ICONS.call + '</button>' +
+    '  <button class="dc-ctrl-btn" id="lock-btn" title="Lock screen" hidden>' + ICONS.lock + '</button>' +
     '  <button class="dc-ctrl-btn dc-ctrl-danger" id="end-btn" title="Hang up" hidden>' + ICONS.hangup + '</button>' +
     '</div>' +
 
@@ -142,6 +156,19 @@
     '<div class="dc-lightbox" id="chat-lightbox" hidden><img id="lightbox-img" alt="" /></div>' +
     // Corner toast for messages that arrive while the chat panel is closed.
     '<div class="dc-toasts" id="chat-toasts"></div>' +
+    '<div class="dc-lock-overlay" id="lock-overlay" hidden>' +
+    '  <div class="dc-lock-peer" id="lock-peer">Peer</div>' +
+    '  <div class="dc-lock-timer" id="lock-timer">00:00</div>' +
+    '  <div class="dc-lock-mic" id="lock-mic"><span id="lock-mic-icon"></span><span id="lock-mic-text">Mic on</span></div>' +
+    '  <div class="dc-lock-hold" id="lock-hold">' +
+    '    <svg class="dc-lock-ring" viewBox="0 0 132 132">' +
+    '      <circle class="dc-lock-ring-track" cx="66" cy="66" r="62"></circle>' +
+    '      <circle class="dc-lock-ring-fill" id="lock-ring" cx="66" cy="66" r="62"></circle>' +
+    '    </svg>' +
+    '    <span class="dc-lock-icon" id="lock-icon">' + ICONS.lockBig + '</span>' +
+    '  </div>' +
+    '  <div class="dc-lock-hint" id="lock-hint">Press and hold to unlock</div>' +
+    '</div>' +
     '<div class="dc-ended" id="call-ended-toast" hidden>' +
     '  <div class="dc-ended-card">' +
     '    <div class="dc-ended-avatar" id="ended-avatar">?</div>' +
@@ -347,7 +374,18 @@
 
     refreshStage();
 
+    // Lock is only meaningful during a live call.
+    lockBtn.hidden = state !== 'in-call';
+    if (state !== 'in-call') {
+      unlockScreen('call state changed');
+      clearAutoLockTimer();
+      stopCallTimer();
+      disarmHangup();
+    }
+
     if (state === 'in-call') {
+      armHistoryGuard();
+      scheduleAutoLock();
       acquireWakeLock();
       startSilentKeepalive();
       setupMediaSession();
@@ -358,6 +396,7 @@
       try { remoteAudio.play().catch(function () {}); } catch (e) {}
       emitMediaState();
     } else if (state === 'idle') {
+      disarmHistoryGuard();
       releaseWakeLock();
       stopSilentKeepalive();
       stopVoiceActivityDetection();
@@ -729,6 +768,7 @@
         clearIceTimeout();
         iceRetried = false;
         setStatus('Connected', 'connected');
+        startCallTimer();
         reportSelectedPair(conn);
       } else if (conn.connectionState === 'failed') {
         clearIceTimeout();
@@ -873,6 +913,17 @@
   callBtn.addEventListener('click', startCall);
   endBtn.addEventListener('click', function () {
     var wasConnected = (callState === 'in-call');
+
+    // During a live call one tap only arms it: an accidental press against
+    // an ear is the exact problem this whole feature exists for. Ringing or
+    // dialling still ends on the first tap, where a misfire costs nothing.
+    if (wasConnected && !hangupArmed) {
+      armHangup();
+      log('hang-up armed, waiting for confirming tap');
+      return;
+    }
+
+    disarmHangup();
     endCall(true, wasConnected ? { name: myName, isSelf: true } : null);
   });
   settingsBtn.addEventListener('click', function () { settingsPanel.hidden = !settingsPanel.hidden; });
@@ -933,6 +984,7 @@
     muteBtn.classList.toggle('dc-ctrl-off', !track.enabled);
     muteBtn.innerHTML = track.enabled ? ICONS.mic : ICONS.micOff;
     muteBtn.title = track.enabled ? 'Mute' : 'Unmute';
+    refreshLockMic();
   });
 
   cameraBtn.addEventListener('click', function () {
@@ -1202,6 +1254,284 @@
       refreshStage();
     }
   });
+
+  // ============================================================
+  // Call screen lock
+  // A phone held against an ear must not be able to hang up, mute,
+  // expand a tile or navigate away by accident.
+  // ============================================================
+  var lockOverlay = document.getElementById('lock-overlay');
+  var lockBtn = document.getElementById('lock-btn');
+  var lockHold = document.getElementById('lock-hold');
+  var lockRing = document.getElementById('lock-ring');
+  var lockIcon = document.getElementById('lock-icon');
+  var lockHint = document.getElementById('lock-hint');
+  var lockPeer = document.getElementById('lock-peer');
+  var lockTimerEl = document.getElementById('lock-timer');
+  var lockMic = document.getElementById('lock-mic');
+  var lockMicIcon = document.getElementById('lock-mic-icon');
+  var lockMicText = document.getElementById('lock-mic-text');
+  var autolockSelect = document.getElementById('autolock-select');
+
+  var isLocked = false;
+  var HOLD_MS = 1500;
+
+  // ---- call timer ----
+  // Nothing tracked call duration before; the lock screen needs it, and it
+  // is the only thing on an otherwise black screen that proves the call is
+  // still alive.
+  var callConnectedAt = 0;
+  var callTimerInterval = 0;
+
+  function formatDuration(ms) {
+    var total = Math.floor(ms / 1000);
+    var h = Math.floor(total / 3600);
+    var m = Math.floor((total % 3600) / 60);
+    var s = total % 60;
+    function pad(n) { return n < 10 ? '0' + n : String(n); }
+    return (h > 0 ? pad(h) + ':' : '') + pad(m) + ':' + pad(s);
+  }
+
+  function startCallTimer() {
+    if (callConnectedAt) return;        // already running
+    callConnectedAt = Date.now();
+    clearInterval(callTimerInterval);
+    callTimerInterval = setInterval(function () {
+      if (!callConnectedAt) return;
+      lockTimerEl.textContent = formatDuration(Date.now() - callConnectedAt);
+    }, 1000);
+    lockTimerEl.textContent = '00:00';
+  }
+
+  function stopCallTimer() {
+    clearInterval(callTimerInterval);
+    callTimerInterval = 0;
+    callConnectedAt = 0;
+  }
+
+  // ---- mute indicator (the mute button is unreachable while locked) ----
+  function refreshLockMic() {
+    var track = localStream && localStream.getAudioTracks()[0];
+    var on = !!(track && track.enabled);
+    lockMicIcon.innerHTML = on ? ICONS.micSmall : ICONS.micOffSmall;
+    lockMicText.textContent = on ? 'Mic on' : 'Muted';
+    lockMic.classList.toggle('is-muted', !on);
+  }
+
+  // ---- lock / unlock ----
+  function lockScreen() {
+    if (isLocked || callState !== 'in-call') return;
+    isLocked = true;
+    cancelHold();
+    refreshLockMic();
+    lockPeer.textContent = peerName;
+    lockTimerEl.textContent = callConnectedAt ? formatDuration(Date.now() - callConnectedAt) : '00:00';
+    lockOverlay.hidden = false;
+    clearAutoLockTimer();            // no point idling while already locked
+    log('screen locked');
+  }
+
+  function unlockScreen(reason) {
+    if (!isLocked) return;
+    isLocked = false;
+    cancelHold();
+    lockOverlay.hidden = true;
+    log('screen unlocked (' + (reason || 'gesture') + ')');
+    scheduleAutoLock();              // start idling again
+  }
+
+  lockBtn.addEventListener('click', function () { lockScreen(); });
+
+  // ---- press-and-hold to unlock ----
+  // Chosen over slide-to-unlock deliberately: a horizontal drag near a
+  // screen edge can be swallowed by Android's back-navigation gesture,
+  // which is exactly what the navigation guard below is trying to prevent.
+  // A stationary hold uses one pointer and cannot be mistaken for a scroll
+  // or a swipe.
+  var RING_R = 62;
+  var RING_LEN = 2 * Math.PI * RING_R;
+  lockRing.style.strokeDasharray = RING_LEN;
+  lockRing.style.strokeDashoffset = RING_LEN;
+  lockRing.style.transition = 'none';
+
+  var holdTimer = 0;
+  var holding = false;
+  var holdPointerId = null;
+
+  // The unlock is driven by setTimeout, NOT by the ring animation.
+  // requestAnimationFrame is throttled hard in a backgrounded or
+  // power-saving tab (measured at 3fps in testing), and a lock you cannot
+  // get out of because the render loop stalled is the worst possible
+  // failure for this feature. The ring is a CSS transition, so it is
+  // purely cosmetic: if it stutters, the unlock still fires on time.
+  function cancelHold() {
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = 0; }
+    holding = false;
+    holdPointerId = null;
+    lockHold.classList.remove('is-holding');
+    lockRing.style.transition = 'none';
+    lockRing.style.strokeDashoffset = RING_LEN;
+    // Force a reflow so the next hold animates from full again instead of
+    // inheriting the cancelled transition.
+    void lockRing.getBoundingClientRect();
+    lockHint.textContent = 'Press and hold to unlock';
+  }
+
+  function beginHold(e) {
+    if (!isLocked) return;
+    e.preventDefault();
+    if (holding) return;
+    holding = true;
+    holdPointerId = e.pointerId;
+    lockHold.classList.add('is-holding');
+    lockHint.textContent = 'Keep holding...';
+
+    lockRing.style.transition = 'stroke-dashoffset ' + HOLD_MS + 'ms linear';
+    lockRing.style.strokeDashoffset = 0;
+
+    holdTimer = setTimeout(function () {
+      holdTimer = 0;
+      if (!holding || !isLocked) return;
+      unlockScreen('hold');
+    }, HOLD_MS);
+  }
+
+  function endHold(e) {
+    if (holdPointerId !== null && e && e.pointerId !== holdPointerId) return;
+    if (holding) cancelHold();
+  }
+
+  lockHold.addEventListener('pointerdown', beginHold);
+  lockHold.addEventListener('pointerup', endHold);
+  lockHold.addEventListener('pointercancel', endHold);
+  lockHold.addEventListener('pointerleave', endHold);
+
+  // Everything that is not the hold target is swallowed, so a cheek or a
+  // stray finger cannot reach anything underneath.
+  lockOverlay.addEventListener('pointerdown', function (e) {
+    if (lockHold.contains(e.target)) return;
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  lockOverlay.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  lockOverlay.addEventListener('touchmove', function (e) { e.preventDefault(); }, { passive: false });
+  lockOverlay.addEventListener('dblclick', function (e) { e.preventDefault(); });
+
+  // ---- auto-lock ----
+  var AUTOLOCK_KEY = 'notes.autolock';
+  var autoLockTimer = 0;
+
+  function autoLockSeconds() {
+    var v = parseInt(autolockSelect.value, 10);
+    return isNaN(v) ? 0 : v;
+  }
+
+  function clearAutoLockTimer() {
+    if (autoLockTimer) { clearTimeout(autoLockTimer); autoLockTimer = 0; }
+  }
+
+  function scheduleAutoLock() {
+    clearAutoLockTimer();
+    var secs = autoLockSeconds();
+    if (!secs || isLocked || callState !== 'in-call') return;
+    autoLockTimer = setTimeout(function () {
+      autoLockTimer = 0;
+      if (callState === 'in-call' && !isLocked) {
+        log('auto-lock after ' + secs + 's idle');
+        lockScreen();
+      }
+    }, secs * 1000);
+  }
+
+  // Any deliberate interaction postpones the auto-lock. Bound on the
+  // workspace rather than the document so the lock overlay's own swallowed
+  // events cannot keep resetting it.
+  ['pointerdown', 'keydown', 'wheel'].forEach(function (evt) {
+    callView.addEventListener(evt, function () {
+      if (!isLocked) scheduleAutoLock();
+    }, true);
+  });
+
+  (function initAutoLock() {
+    var saved = null;
+    try { saved = localStorage.getItem(AUTOLOCK_KEY); } catch (e) {}
+    if (saved === null) {
+      // A phone is where this matters; on a desktop it would just be
+      // annoying, so default it off there.
+      saved = isTouch ? '10' : '0';
+    }
+    autolockSelect.value = saved;
+    if (autolockSelect.selectedIndex < 0) autolockSelect.value = '0';
+  })();
+
+  autolockSelect.addEventListener('change', function () {
+    try { localStorage.setItem(AUTOLOCK_KEY, autolockSelect.value); } catch (e) {}
+    log('auto-lock set to', autolockSelect.value + 's');
+    scheduleAutoLock();
+  });
+
+  // ---- accidental exit protection ----
+  // Tab close / reload confirmation.
+  window.addEventListener('beforeunload', function (e) {
+    if (callState === 'in-call' || callState === 'calling') {
+      e.preventDefault();
+      e.returnValue = '';
+      return '';
+    }
+  });
+
+  // Android back button: keep a spare history entry while a call is up, so
+  // a back gesture consumes that instead of leaving the page.
+  var historyGuarded = false;
+  function armHistoryGuard() {
+    if (historyGuarded) return;
+    historyGuarded = true;
+    try { history.pushState({ callGuard: true }, ''); } catch (e) {}
+    log('history guard armed');
+  }
+  function disarmHistoryGuard() { historyGuarded = false; }
+
+  window.addEventListener('popstate', function () {
+    if (callState !== 'in-call' && callState !== 'calling') return;
+    // Put the entry straight back so the page is never left mid-call.
+    try { history.pushState({ callGuard: true }, ''); } catch (e) {}
+    if (isLocked) return;            // stay quiet while locked
+    setStatus('Back is blocked during a call', 'connecting');
+    setTimeout(function () {
+      if (callState === 'in-call') setStatus('Connected', 'connected');
+    }, 2000);
+    log('back navigation blocked during call');
+  });
+
+  // ---- hang up needs confirming ----
+  // Tapping this by accident is the whole reason the lock exists, so one
+  // tap arms it and a second within 3s actually hangs up.
+  var HANGUP_CONFIRM_MS = 3000;
+  var hangupArmed = false;
+  var hangupTimer = 0;
+  var hangupHint = null;
+
+  function disarmHangup() {
+    hangupArmed = false;
+    if (hangupTimer) { clearTimeout(hangupTimer); hangupTimer = 0; }
+    endBtn.classList.remove('dc-ctrl-confirm');
+    if (hangupHint && hangupHint.parentNode) hangupHint.parentNode.removeChild(hangupHint);
+    hangupHint = null;
+  }
+
+  function armHangup() {
+    hangupArmed = true;
+    endBtn.classList.add('dc-ctrl-confirm');
+    hangupHint = document.createElement('div');
+    hangupHint.className = 'dc-confirm-hint';
+    hangupHint.textContent = 'Tap again to hang up';
+    endBtn.parentNode.appendChild(hangupHint);
+    hangupTimer = setTimeout(function () {
+      hangupTimer = 0;
+      disarmHangup();
+      log('hang-up confirmation expired');
+    }, HANGUP_CONFIRM_MS);
+  }
 
   // ---------- Signaling ----------
   socket.on('connect', function () {

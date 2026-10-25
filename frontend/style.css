@@ -1340,3 +1340,120 @@ body.is-observer #call-btn:hover { background: rgba(255,255,255,0.06); }
      show a sliver of stage background at each corner. */
   .dc-stage.dc-has-focus > .dc-tile.dc-focused { border-radius: 0; }
 }
+
+/* ============================================================
+   Call screen lock
+   Sits above everything else (chat 18, incoming 20, ended 30,
+   lightbox 40, replaced 60, profile 100) so nothing underneath
+   can be reached while a phone is against an ear.
+   ============================================================ */
+.dc-lock-overlay:not([hidden]) {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: #000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  /* Swallow every gesture: no pinch zoom, no scroll, no long-press
+     callout, no text selection, no tap highlight. */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: default;
+  font-family: "gg sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+  animation: dc-fade 200ms ease-out;
+}
+
+/* Hold target: generous hit area, dim so the screen stays near-black. */
+.dc-lock-hold {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.04);
+  touch-action: none;
+}
+.dc-lock-hold svg.dc-lock-ring {
+  position: absolute;
+  inset: 0;
+  width: 132px;
+  height: 132px;
+  transform: rotate(-90deg);   /* start the sweep at 12 o'clock */
+  pointer-events: none;
+}
+.dc-lock-ring-track { fill: none; stroke: rgba(255,255,255,0.10); stroke-width: 3; }
+.dc-lock-ring-fill {
+  fill: none;
+  stroke: #23a559;
+  stroke-width: 3;
+  stroke-linecap: round;
+  /* dasharray/offset are set from JS so the sweep can be cancelled
+     mid-way without fighting a CSS transition. */
+}
+.dc-lock-icon { color: #6b7076; display: flex; }
+.dc-lock-hold.is-holding .dc-lock-icon { color: #23a559; }
+
+.dc-lock-hint {
+  font-size: 12px;
+  color: #4e5058;
+  letter-spacing: 0.3px;
+  text-align: center;
+}
+.dc-lock-peer {
+  font-size: 15px;
+  font-weight: 600;
+  color: #6b7076;
+}
+.dc-lock-timer {
+  font-size: 30px;
+  font-weight: 600;
+  color: #8a9097;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 1px;
+}
+.dc-lock-mic {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4e5058;
+  padding: 5px 11px;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.04);
+}
+.dc-lock-mic.is-muted { color: #f23f43; background: rgba(242,63,67,0.12); }
+
+/* The lock button itself only makes sense during a call. */
+#lock-btn { }
+
+/* Hang-up waiting for its confirming second tap. */
+.dc-ctrl-btn.dc-ctrl-confirm {
+  background: #f23f43;
+  color: #fff;
+  animation: dc-pulse 0.7s ease-in-out infinite;
+}
+.dc-confirm-hint {
+  position: absolute;
+  bottom: 86px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.82);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+.dc-controls { position: relative; }
