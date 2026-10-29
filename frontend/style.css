@@ -1457,3 +1457,101 @@ body.is-observer #call-btn:hover { background: rgba(255,255,255,0.06); }
   z-index: 5;
 }
 .dc-controls { position: relative; }
+
+/* ============================================================
+   Screen-share audio: its own level, independent of the voice
+   ============================================================ */
+.dc-screen-audio:not([hidden]) {
+  position: absolute;
+  bottom: 10px;
+  right: 10px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 6px 8px;
+  border-radius: 10px;
+  background: rgba(20,21,24,0.86);
+  backdrop-filter: blur(6px);
+  /* Hidden until hover on desktop; on touch it is toggled by tapping the
+     tile, so the class below pins it visible. */
+  opacity: 0;
+  transition: opacity 140ms ease;
+  pointer-events: none;
+}
+.dc-tile-screen:hover .dc-screen-audio:not([hidden]),
+.dc-screen-audio.is-pinned:not([hidden]) {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none), (pointer: coarse) {
+  /* No real hover here, and an emulated one must not fight the pin.
+     Both selectors are (0,4,0) so the pinned one wins by coming last -
+     an earlier version had the pin at (0,3,0) and the neutralised hover
+     rule silently beat it, so tapping did nothing. */
+  .dc-tile-screen:hover .dc-screen-audio:not([hidden]) { opacity: 0; pointer-events: none; }
+  .dc-tile-screen .dc-screen-audio.is-pinned:not([hidden]) { opacity: 1; pointer-events: auto; }
+}
+.dc-screen-audio input[type=range] {
+  width: 96px;
+  accent-color: #5865f2;
+  cursor: pointer;
+  margin: 0;
+}
+.dc-screen-audio-btn {
+  border: none;
+  background: none;
+  color: #dbdee1;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+}
+.dc-screen-audio-btn.is-muted { color: #f23f43; }
+.dc-screen-audio-val {
+  font-size: 11px;
+  color: #949ba4;
+  min-width: 30px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Auto-hiding control bar
+   Overlaid rather than in flow, so the tiles keep the space when it
+   slides away and there is no layout jump either direction.
+   ============================================================ */
+#workspace-view.dc-bar-overlay .dc-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 16;
+  background: linear-gradient(to top, rgba(26,27,30,0.96) 55%, rgba(26,27,30,0));
+  border-top: none;
+  transition: transform 220ms ease, opacity 220ms ease;
+  will-change: transform;
+}
+#workspace-view.dc-bar-overlay .dc-stage {
+  /* The stage owns the full height; the bar floats on top of it. */
+  padding-bottom: 12px;
+}
+#workspace-view.dc-bar-overlay.dc-bar-hidden .dc-controls {
+  transform: translateY(104%);
+  opacity: 0;
+  pointer-events: none;
+}
+/* A thin always-live strip at the bottom edge so moving towards where the
+   bar was brings it back, even while it is fully hidden. */
+.dc-bar-reveal-zone {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 72px;
+  z-index: 15;
+  pointer-events: none;
+}
+#workspace-view.dc-bar-overlay.dc-bar-hidden .dc-bar-reveal-zone { pointer-events: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  #workspace-view.dc-bar-overlay .dc-controls { transition: none; }
+}

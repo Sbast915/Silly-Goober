@@ -78,6 +78,11 @@
     '  <div class="dc-tile dc-tile-screen" id="tile-screen" hidden>' +
     '    <video id="screen-video" autoplay playsinline></video>' +
     '    <div class="dc-tile-label" id="screen-tile-label">Screen</div>' +
+    '    <div class="dc-screen-audio" id="screen-audio-ctl" hidden>' +
+    '      <button type="button" class="dc-screen-audio-btn" id="screen-mute-btn" title="Mute shared audio"></button>' +
+    '      <input type="range" id="screen-volume" min="0" max="100" step="1" aria-label="Shared audio volume" />' +
+    '      <span class="dc-screen-audio-val" id="screen-volume-val">100%</span>' +
+    '    </div>' +
     '    <div class="dc-share-badge" id="share-badge" hidden>SHARING SCREEN</div>' +
     '    <button type="button" class="dc-tile-fs" id="fs-screen-btn" title="Fullscreen" aria-label="Fullscreen shared screen">' + ICONS.fullscreen + '</button>' +
     '    <button type="button" class="dc-tile-expand" id="expand-screen-btn" title="Expand" aria-label="Expand shared screen">' + ICONS.expand + '</button>' +
@@ -126,7 +131,8 @@
     '  </div>' +
     '</div>' +
 
-    '<div class="dc-controls">' +
+    '<div class="dc-bar-reveal-zone" id="bar-reveal-zone"></div>' +
+    '<div class="dc-controls" id="controls-bar">' +
     '  <button class="dc-ctrl-btn" id="mute-btn" title="Mute">' + ICONS.mic + '</button>' +
     '  <button class="dc-ctrl-btn" id="camera-btn" title="Camera off">' + ICONS.cam + '</button>' +
     '  <button class="dc-ctrl-btn" id="share-btn" title="Share screen">' + ICONS.screen + '</button>' +
@@ -233,6 +239,7 @@
   var localAvatarCircle = document.getElementById('local-avatar-circle');
   var remoteAvatarCircle = document.getElementById('remote-avatar-circle');
   var shareBtn = document.getElementById('share-btn');
+  var controlsBar = document.getElementById('controls-bar');
   var shareBadge = document.getElementById('share-badge');
   var presenceList = document.getElementById('presence-list');
   var presenceListItems = document.getElementById('presence-list-items');
@@ -247,6 +254,15 @@
                 (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ||
                 ('ontouchstart' in window);
   if (isTouch) document.body.classList.add('is-touch');
+
+  // isTouch is captured once at load, which goes stale on a hybrid device
+  // or if the input mode changes. For decisions made at interaction time,
+  // ask the same media query the CSS uses so the two can never disagree.
+  function noHoverNow() {
+    return !!(window.matchMedia &&
+      (window.matchMedia('(hover: none)').matches ||
+       window.matchMedia('(pointer: coarse)').matches));
+  }
 
   var FALLBACK_ICE = [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -383,6 +399,7 @@
       disarmHangup();
     }
 
+    enableBarOverlay(state === 'in-call');
     if (state === 'in-call') {
       armHistoryGuard();
       scheduleAutoLock();
@@ -808,6 +825,7 @@
   // stable handle both sides agree on.
   var remoteStreams = Object.create(null);
   var remoteScreenStreamId = null;
+  var peerScreenHasAudio = false;
 
   function routeRemoteStreams() {
     var ids = Object.keys(remoteStreams);
@@ -838,10 +856,10 @@
       if (screenVideo.srcObject !== screen) screenVideo.srcObject = screen;
       // Screen audio rides on the screen stream, so this element must not
       // be muted - unlike the local preview, which would echo.
-      screenVideo.muted = false;
       screenTileLabel.textContent = peerName + "'s screen";
       hasScreenMedia = true;
-      applyPeerVolume(peerVolume);
+      applyScreenVolume();
+      refreshScreenVolumeUI();
     } else if (!localScreenStream) {
       screenVideo.srcObject = null;
       hasScreenMedia = false;
@@ -1531,6 +1549,166 @@
       disarmHangup();
       log('hang-up confirmation expired');
     }, HANGUP_CONFIRM_MS);
+  }
+
+  // ============================================================
+  // C. Screen-share audio level, independent of the peer's voice
+  // ============================================================
+  var SCREEN_VOLUME_KEY = 'notes.volume.screen';
+  var screenVolume = 1;
+  var screenMuted = false;
+  try {
+    var sv = parseFloat(localStorage.getItem(SCREEN_VOLUME_KEY));
+    if (!isNaN(sv) && sv >= 0 && sv <= 1) screenVolume = sv;
+  } catch (e) {}
+
+  var screenAudioCtl = document.getElementById('screen-audio-ctl');
+  var screenVolRange = document.getElementById('screen-volume');
+  var screenMuteBtn = document.getElementById('screen-mute-btn');
+  var screenVolVal = document.getElementById('screen-volume-val');
+
+  function applyScreenVolume() {
+    // Our own preview always stays silent - we are already hearing the
+    // real tab out of our own speakers.
+    if (localScreenStream) {
+      try { screenVideo.muted = true; } catch (e) {}
+      return;
+    }
+    try {
+      screenVideo.muted = screenMuted;
+      screenVideo.volume = screenVolume;
+    } catch (e) {}
+  }
+
+  function paintScreenVolume() {
+    screenVolRange.value = Math.round(screenVolume * 100);
+    screenVolVal.textContent = screenMuted ? 'Muted' : (Math.round(screenVolume * 100) + '%');
+    screenMuteBtn.classList.toggle('is-muted', screenMuted);
+    screenMuteBtn.innerHTML = screenMuted ? ICONS.micOffSmall : ICONS.micSmall;
+    screenMuteBtn.title = screenMuted ? 'Unmute shared audio' : 'Mute shared audio';
+  }
+
+  // Only meaningful when the PEER is sharing and their share carries audio.
+  function refreshScreenVolumeUI() {
+    var show = !!(remoteScreenStreamId && peerScreenHasAudio && !localScreenStream);
+    screenAudioCtl.hidden = !show;
+    if (show) { applyScreenVolume(); paintScreenVolume(); }
+  }
+
+  screenVolRange.addEventListener('input', function () {
+    screenVolume = Math.max(0, Math.min(1, parseInt(screenVolRange.value, 10) / 100));
+    if (screenVolume > 0) screenMuted = false;
+    try { localStorage.setItem(SCREEN_VOLUME_KEY, String(screenVolume)); } catch (e) {}
+    applyScreenVolume();
+    paintScreenVolume();
+  });
+  screenMuteBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    screenMuted = !screenMuted;
+    applyScreenVolume();
+    paintScreenVolume();
+  });
+  // Keep a drag on the slider from also pinning/unpinning or dragging a tile.
+  screenAudioCtl.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+
+  // Touch: tapping the screen tile pins the control, tapping elsewhere hides it.
+  tileScreen.addEventListener('click', function (e) {
+    if (!noHoverNow()) return;
+    if (screenAudioCtl.hidden) return;
+    if (screenAudioCtl.contains(e.target)) return;
+    screenAudioCtl.classList.toggle('is-pinned');
+  });
+  document.addEventListener('pointerdown', function (e) {
+    if (!noHoverNow() || screenAudioCtl.hidden) return;
+    if (!tileScreen.contains(e.target)) screenAudioCtl.classList.remove('is-pinned');
+  }, true);
+
+  paintScreenVolume();
+
+  // ============================================================
+  // D. Auto-hiding control bar
+  // ============================================================
+  var BAR_IDLE_MS = 3000;
+  var barTimer = 0;
+  var revealZone = document.getElementById('bar-reveal-zone');
+
+  function barShouldStayVisible() {
+    // Not during setup - you need the controls to start a call at all.
+    if (callState !== 'in-call') return true;
+    // Anything the user has deliberately opened.
+    if (!settingsPanel.hidden) return true;
+    if (!chatPanel.hidden) return true;
+    if (volumePopover) return true;
+    if (!screenAudioCtl.hidden && screenAudioCtl.classList.contains('is-pinned')) return true;
+    if (hangupArmed) return true;
+    // Keyboard focus inside the bar: hiding it would strand a keyboard user.
+    if (controlsBar.contains(document.activeElement)) return true;
+    // Pointer resting on the bar.
+    if (barPointerInside) return true;
+    // The lock overlay owns the screen; leave the bar alone underneath it.
+    if (isLocked) return true;
+    return false;
+  }
+
+  // The class on the element is the single source of truth. An earlier
+  // version mirrored it in a `barHidden` boolean and the two drifted
+  // apart, leaving showBar() a no-op while the bar was visibly hidden -
+  // the bar could not be brought back at all. Read the DOM instead.
+  function isBarHidden() { return callView.classList.contains('dc-bar-hidden'); }
+
+  function showBar(reason) {
+    var was = isBarHidden();
+    callView.classList.remove('dc-bar-hidden');
+    if (was && reason) log('control bar shown (' + reason + ')');
+    scheduleBarHide();
+  }
+
+  function hideBar() {
+    if (isBarHidden()) return;
+    if (barShouldStayVisible()) { scheduleBarHide(); return; }
+    callView.classList.add('dc-bar-hidden');
+    log('control bar hidden after ' + BAR_IDLE_MS + 'ms idle');
+  }
+
+  function scheduleBarHide() {
+    if (barTimer) { clearTimeout(barTimer); barTimer = 0; }
+    if (callState !== 'in-call') return;
+    barTimer = setTimeout(function () { barTimer = 0; hideBar(); }, BAR_IDLE_MS);
+  }
+
+  var barPointerInside = false;
+  controlsBar.addEventListener('pointerenter', function () { barPointerInside = true; showBar('pointer on bar'); });
+  controlsBar.addEventListener('pointerleave', function () { barPointerInside = false; scheduleBarHide(); });
+  // Focusin/out rather than focus, because these bubble from the buttons.
+  controlsBar.addEventListener('focusin', function () { showBar('keyboard focus'); });
+  controlsBar.addEventListener('focusout', function () { scheduleBarHide(); });
+
+  // Mouse movement anywhere in the call area brings it back.
+  callView.addEventListener('pointermove', function () {
+    if (isLocked) return;
+    showBar();
+  });
+  // Touch: any tap on the call area reveals it.
+  callView.addEventListener('pointerdown', function () {
+    if (isLocked) return;
+    showBar('tap');
+  }, true);
+  // Keyboard users get it back on any key too.
+  callView.addEventListener('keydown', function () { if (!isLocked) showBar('key'); });
+  // A thin strip along the bottom edge catches "reaching for the bar"
+  // while it is fully off-screen and not hit-testable itself.
+  if (revealZone) {
+    revealZone.addEventListener('pointerenter', function () { showBar('bottom edge'); });
+  }
+
+  function enableBarOverlay(on) {
+    callView.classList.toggle('dc-bar-overlay', on);
+    if (!on) {
+      callView.classList.remove('dc-bar-hidden');
+      if (barTimer) { clearTimeout(barTimer); barTimer = 0; }
+    } else {
+      scheduleBarHide();
+    }
   }
 
   // ---------- Signaling ----------
@@ -2750,10 +2928,9 @@
     // The video element carries the same stream; keep it in step so the
     // level does not depend on which element the browser actually plays.
     try { remoteVideo.volume = peerVolume; } catch (e) {}
-    // A shared screen can carry its own audio on a separate stream, so it
-    // needs the same level - but only when it is THEIR screen. Our own
-    // preview stays muted or we would echo ourselves.
-    try { if (!localScreenStream) screenVideo.volume = peerVolume; } catch (e) {}
+    // Deliberately NOT the shared screen: a video's soundtrack and a
+    // person's voice need separate levels, so the screen tile has its own
+    // slider (applyScreenVolume).
     try { localStorage.setItem(VOLUME_KEY, String(peerVolume)); } catch (e) {}
   }
   applyPeerVolume(peerVolume);
@@ -2876,23 +3053,41 @@
       setStatus('Screen sharing is not available in mobile browsers', 'error');
       return;
     }
+    // Tell them what to pick BEFORE the picker steals focus - once the OS
+    // dialog is up they cannot read the page.
+    setStatus('For YouTube or music, choose Chrome Tab and tick "Share tab audio"', 'connecting');
+    await new Promise(function (r) { setTimeout(r, 900); });
+
     var stream;
     try {
-      // audio:true asks for system/tab audio. Chrome and Edge on desktop
-      // offer it as a checkbox in the picker; Firefox and Safari ignore it
-      // and simply return no audio track, which is handled below.
+      // NOTE ON FEATURE DETECTION: systemAudio / selfBrowserSurface are
+      // getDisplayMedia *options*, not MediaTrackConstraints, so they do
+      // NOT appear in getSupportedConstraints() - checking there would
+      // always say "unsupported". Unknown members are ignored by older
+      // browsers, so passing them unconditionally is both safe and the
+      // only workable approach.
       stream = await navigator.mediaDevices.getDisplayMedia({
         video: { frameRate: { ideal: 30 } },
         audio: {
           echoCancellation: false,   // it is not a microphone; leave it alone
           noiseSuppression: false,
           autoGainControl: false
-        }
+        },
+        // Never offer whole-system audio: that would capture our own call
+        // coming out of their speakers and loop it straight back.
+        systemAudio: 'exclude',
+        // And do not let them pick this very tab, which would capture the
+        // call's own audio and video (hall of mirrors).
+        selfBrowserSurface: 'exclude',
+        // Let them switch which tab is shared without restarting the share.
+        surfaceSwitching: 'include'
       });
     } catch (err) {
       // Cancelling the OS picker lands here (NotAllowedError/AbortError).
       // Nothing was changed yet, so just leave the UI exactly as it was.
       log('screen share cancelled or refused:', err && err.name);
+      // The hint above is still on screen; put the status back.
+      setStatus(callState === 'in-call' ? 'Connected' : 'Ready', callState === 'in-call' ? 'connected' : 'ready');
       return;
     }
 
@@ -2922,7 +3117,12 @@
     refreshStage();
     // A share is almost always the thing you want to look at.
     setFocus('screen');
-    if (!aTrack) setStatus('Sharing screen (no audio - your browser did not offer it)', 'connected');
+    if (!aTrack) {
+      // Actionable, because the fix is a checkbox they missed in the picker.
+      setStatus('No audio was shared. To share sound, pick a Chrome Tab and tick "Share tab audio".', 'error');
+    } else {
+      setStatus('Sharing screen with audio', 'connected');
+    }
     emitMediaState();
     log('screen share started, streamId=', stream.id);
 
@@ -2951,10 +3151,16 @@
 
     screenVideo.srcObject = null;
     hasScreenMedia = false;
+    screenAudioCtl.hidden = true;
+    screenAudioCtl.classList.remove('is-pinned');
     setSharingUI(false);
     if (focusMode === 'screen') setFocus('none');
     refreshStage();
     emitMediaState();
+    // The sharing message outlived the share otherwise, leaving a stale
+    // "no audio" warning on screen after the share was long gone.
+    setStatus(callState === 'in-call' ? 'Connected' : 'Ready',
+              callState === 'in-call' ? 'connected' : 'ready');
     log('screen share stopped; camera was never interrupted');
   }
 
@@ -2965,8 +3171,23 @@
   // The peer tells us which of their streams is the screen.
   socket.on('screen-share', function (msg) {
     if (!msg) return;
-    log('<- screen-share', msg.on ? ('on id=' + msg.streamId) : 'off');
+    log('<- screen-share', msg.on ? ('on id=' + msg.streamId + ' audio=' + !!msg.audio) : 'off');
     remoteScreenStreamId = msg.on ? (msg.streamId || null) : null;
+    peerScreenHasAudio = !!(msg.on && msg.audio);
+    if (msg.on) {
+      // Say so up front: silence during a shared video otherwise looks
+      // like a bug on this side rather than a missed checkbox on theirs.
+      setStatus(msg.audio ? (peerName + ' is sharing their screen')
+                          : (peerName + ' is sharing without audio'),
+                msg.audio ? 'connected' : 'connecting');
+      // A share is the thing you want to look at, so expand it for the
+      // viewer too - not just for the person doing the sharing. They can
+      // shrink it again with the tile's own control.
+      setFocus('screen');
+    } else if (focusMode === 'screen') {
+      setFocus('none');
+    }
+    refreshScreenVolumeUI();
     if (!msg.on) {
       // Drop the stream we were treating as theirs so the tile clears even
       // if the removetrack event is slow to arrive.
